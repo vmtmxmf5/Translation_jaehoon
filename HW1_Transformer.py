@@ -3,21 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import copy
 import math
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import DataLoader
-
-import copy
-import math
 from typing import Iterable, List
-
-from torchtext.data import get_tokenizer
-from torchtext.vocab import build_vocab_from_iterator
-from torchtext.datasets import Multi30k
-from torchtext.data.metrics import bleu_score
 
 
 class Transformer(nn.Module):
