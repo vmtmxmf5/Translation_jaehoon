@@ -4,6 +4,21 @@ import torch.nn.functional as F
 import copy
 import math
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import DataLoader
+
+import copy
+import math
+from typing import Iterable, List
+
+from torchtext.data import get_tokenizer
+from torchtext.vocab import build_vocab_from_iterator
+from torchtext.datasets import Multi30k
+from torchtext.data.metrics import bleu_score
+
 
 class Transformer(nn.Module):
     def __init__(self,
@@ -16,15 +31,14 @@ class Transformer(nn.Module):
                 dropout:float = 0.1):
         super(Transformer, self).__init__()
         encoder_layer = TransformerEncoderLayer(d_model, nhead, ff_dim, dropout)
+        # pytorch default eps ==> 분모의 stability를 위해서 더함
         encoder_norm = nn.LayerNorm(d_model, layer_norm_eps)
         self.encoder = TransformerEncoder(encoder_layer, num_enc_layers, encoder_norm)
 
         decoder_layer = TransformerDecoderLayer(d_model, nhead, ff_dim, dropout)
         decoder_norm = nn.LayerNorm(d_model, layer_norm_eps)
         self.decoder = TransformerDecoder(decoder_layer, num_dec_layers, decoder_norm)
-        
-        self.d_model = d_model
-        self.nhead = nhead
+
     def forward(self,
                 src,
                 tgt,
@@ -48,8 +62,8 @@ class Transformer(nn.Module):
 class TransformerEncoder(nn.Module):
     def __init__(self, encoder_layer, num_layers, norm=None):
         super().__init__()
+        # 객체를 생성하지 않았으므로 layer를 복사
         self.layers = nn.ModuleList([copy.deepcopy(encoder_layer) for i in range(num_layers)])
-        self.num_layers = num_layers
         self.norm = norm
     
     def forward(self, src, mask=None, src_key_padding_mask=None):
@@ -75,13 +89,15 @@ class TransformerEncoderLayer(nn.Module):
         self.activation = F.relu
     def forward(self, src, src_mask=None, src_key_padding_mask=None):
         x = src
+        # 레이어 정규화를 먼저하고 합하면 성능이 미미하게 향상
+        # 파이토치 튜토리얼에 레퍼런스 있음
         x = x + self._sa_block(self.norm1(x), src_mask, src_key_padding_mask)
         x = x + self._ff_block(self.norm2(x))
         return x
     def _sa_block(self, x, attn_mask=None, key_padding_mask=None):
         x = self.self_attn(x, x, x,
                            attn_mask=attn_mask,
-                           key_padding_mask=key_padding_mask)[0]
+                           key_padding_mask=key_padding_mask)[0] # (att. value, att. weight)
         return self.dropout1(x)
     def _ff_block(self, x):
         x = self.linear2(self.dropout(self.activation(self.linear1(x))))
@@ -92,7 +108,6 @@ class TransformerDecoder(nn.Module):
     def __init__(self, decoder_layer, num_layers, norm=None):
         super().__init__()
         self.layers = nn.ModuleList([copy.deepcopy(decoder_layer) for i in range(num_layers)])
-        self.num_layers = num_layers
         self.norm = norm
     def forward(self,
                 tgt,
@@ -188,10 +203,13 @@ class MultiheadAttention(nn.Module):
         
         # padding만 False, 원본은 True
         if key_padding_mask is not None:
+            # mini batch에 padding이 있다
             key_padding_mask = key_padding_mask.unsqueeze(1).unsqueeze(2)
+            # (B, 1, 1, T)
             if attn_mask is not None:
-                tgt_mask = attn_mask.type(torch.bool) & key_padding_mask.type(torch.bool)
-                tgt_mask = ~tgt_mask
+                # 미래 정보 사전관찰 방지 attn_mask
+                # (T, T)
+                tgt_mask = attn_mask & key_padding_mask.type(torch.bool)
                 tgt_mask = tgt_mask.float()
                 energy = energy.masked_fill(tgt_mask == 0, float('-inf'))
             else:
@@ -211,16 +229,19 @@ class MultiheadAttention(nn.Module):
 class PositionalEncoding(nn.Module):
     def __init__(self, emb_size:int, dropout:float, max_len:int = 512):
         super().__init__()
+        # Transformer PE : cos(pos / 10000^(2i/d_model)) or sin(pos / 10000^(2i/d_model))
+        # EXP[-2i*log(10000)/d_model] == 10000^(-2i/d_model) == 1 / 10000^(2i/d_model)
         den = torch.exp(-torch.arange(0, emb_size, 2)*math.log(10000)/emb_size)
-        pos = torch.arange(0, max_len).reshape(max_len, 1)
+        pos = torch.arange(0, max_len).reshape(max_len, 1) # 브로드캐스팅을 위해서 차원 추가
         pos_embedding = torch.zeros((max_len, emb_size))
-        pos_embedding[:, 0::2] = torch.sin(pos * den)
-        pos_embedding[:, 1::2] = torch.cos(pos * den)
-        self.pos_embedding = pos_embedding.unsqueeze(-2)
-
+        pos_embedding[:, 0::2] = torch.sin(pos * den) # 짝수 임베딩 디멘젼에 sin 정보 
+        pos_embedding[:, 1::2] = torch.cos(pos * den) # 홀수 임베딩 디멘젼에 cos 정보
+        self.pos_embedding = pos_embedding.unsqueeze(0) # 배치 차원 추가 (B, T, d_model)
         self.dropout = nn.Dropout(dropout)
-    def forward(self, token_embedding):
-        return self.dropout(token_embedding + self.pos_embedding[:token_embedding.size(0), :])
+
+    def forward(self, token_embedding): # (B, T, d_model)
+    # 배치만큼 브로드 캐스팅이 일어나서 위치 정보를 더해줄 것
+        return self.dropout(token_embedding + self.pos_embedding[:, :token_embedding.size(1), :])
 
 
 class TokenEmbedding(nn.Module):
@@ -268,24 +289,16 @@ class Seq2seqTransformer(nn.Module):
         return self.generator(logits)
 
 
-def autoregressive_mask(tgt_time_steps):      
-    mask = (torch.triu(torch.ones((tgt_time_steps, tgt_time_steps))) == 1).transpose(0, 1)
-    mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
-    return mask
-
-
 def create_mask(src, tgt):
     # 배치 고려
     src_time_steps = src.shape[1]
     tgt_time_steps = tgt.shape[1]     
-
-    tgt_mask = autoregressive_mask(tgt_time_steps)
+    tgt_mask = (torch.triu(torch.ones((tgt_time_steps, tgt_time_steps))) == 1).transpose(0, 1).bool()
     # src_mask = torch.zeros((src_time_steps, src_time_steps), device=device).type(torch.bool)
     
     src_padding_mask = (src != PAD_IDX)
     tgt_padding_mask = (tgt != PAD_IDX)
     return tgt_mask, src_padding_mask, tgt_padding_mask 
-
 
 if __name__=='__main__':
     UNK_IDX, PAD_IDX, BOS_IDX, EOS_IDX = 0, 1, 2, 3
