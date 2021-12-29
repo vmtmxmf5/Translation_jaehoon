@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import copy
 import math
-from typing import Iterable, List
 
 
 class Transformer(nn.Module):
