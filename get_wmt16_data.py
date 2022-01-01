@@ -11,6 +11,6 @@ if __name__=='__main__':
         dataset = load_dataset('wmt16', 'de-en', split=name) 
         with open('wmt16_src_' + name + '.txt', 'w') as f, open('wmt16_tgt_' + name + '.txt', 'w') as g:
             for line in tqdm(dataset['translation']):
-                src, tgt = line['en'], line['de']
-                f.write(src.strip() + "\n")
-                g.write(tgt.strip() + "\n")
+                src, tgt = line['en'].strip().replace('\n', '\t'), line['de'].strip().replace('\n', '\t')
+                f.write(src + "\n")
+                g.write(tgt + "\n")
