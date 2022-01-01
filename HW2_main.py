@@ -18,14 +18,16 @@ class WMT_Dataset(nn.Module):
         self.src_path = src_path
         self.tgt_path = tgt_path
         self.tokenizer = tokenizer
-        with open(src_path, 'r') as f, open(tgt_path, 'r') as g:
+        # 반드시 rb로 읽을 것. 'r'로 읽으면 utf 맞춰도 line개수가 달라짐
+        # vim으로 보는 line index랑 python으로 읽어온 index랑 달라지니 주의!
+        with open(src_path, 'rb') as f, open(tgt_path, 'rb') as g:
             self.src_data = f.readlines()
             self.tgt_data = g.readlines()
     def __len__(self):
         return len(self.src_data)
     def __getitem__(self, index):
-        src = self.src_data[index]
-        tgt = self.tgt_data[index]
+        src = self.src_data[index].decode('utf-8')
+        tgt = self.tgt_data[index].decode('utf-8')
         src = torch.LongTensor([self.tokenizer.encode_as_ids(src)])
         tgt = torch.LongTensor([[self.tokenizer.bos_id()] + self.tokenizer.encode_as_ids(tgt) + [self.tokenizer.eos_id()]])
         src_len = src.shape[1]
