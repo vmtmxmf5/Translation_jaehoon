@@ -9,7 +9,7 @@ if __name__=='__main__':
 
     for name in ['train', 'validation', 'test']:
         dataset = load_dataset('wmt16', 'de-en', split=name) 
-        with open('wmt16_src_' + name + '.txt', 'w') as f, open('wmt16_tgt_' + name + '.txt', 'w') as g:
+        with open('wmt16_src_' + name + '.txt', 'w', encoding='utf-8') as f, open('wmt16_tgt_' + name + '.txt', 'w', encoding='utf-8') as g:
             for line in tqdm(dataset['translation']):
                 src, tgt = line['en'].strip().replace('\n', '\t'), line['de'].strip().replace('\n', '\t')
                 f.write(src + "\n")
