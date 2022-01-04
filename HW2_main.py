@@ -9,9 +9,10 @@ import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from torchmetrics import BLEUScore
 import logging
+# from transformers import get_scheduler
 
 from HW1_Transformer import *
-from transformers import get_scheduler
+
 
 class WMT_Dataset(nn.Module):
     def __init__(self, src_path, tgt_path, tokenizer):
@@ -43,8 +44,8 @@ def WMT_collate(batch):
     for i, (src, tgt) in enumerate(zip(srcs, tgts)):
         pad_src = max_src - list(src_len)[i]
         pad_tgt = max_tgt - list(tgt_len)[i]
-        src_tensor = torch.cat([src, torch.LongTensor([[tokenizer.pad_id()] * pad_src])], dim=1)
-        tgt_tensor = torch.cat([tgt, torch.LongTensor([[tokenizer.pad_id()] * pad_tgt])], dim=1)
+        src_tensor = torch.cat([src, torch.LongTensor([[1] * pad_src])], dim=1)
+        tgt_tensor = torch.cat([tgt, torch.LongTensor([[1] * pad_tgt])], dim=1)
         source.append(src_tensor)
         target.append(tgt_tensor)
 
@@ -66,10 +67,10 @@ def train(model, optimizer, criterion, dataloader, pad_id, train_begin, epoch, d
         tgt = tgt.to(device)
         tgt_input = tgt[:, :-1]
 
-        tgt_mask, src_padding_mask, tgt_padding_mask = create_mask(src, tgt_input, pad_id, device)
+        tgt_mask, src_padding_mask, tgt_padding_mask, memory_mask = create_mask(src, tgt_input, pad_id, device)
         
         # (Batch, T_dec, len(vocab))
-        outputs = model(src, tgt_input, tgt_mask, src_padding_mask, tgt_padding_mask)
+        outputs = model(src, tgt_input, tgt_mask, src_padding_mask, tgt_padding_mask, memory_mask)
 
         # + 파이토치는 backward path 타고 오면서 누적합된 그라디언트를 사용한다 (for RNN)
         # steps 마다 zero grad로 바꿔주지 않으면 이전 step의 그라디언트를 재활용하게 되고
@@ -127,11 +128,11 @@ def evaluate(model, criterion, dataloader, pad_id, tokenizer, device):
             src = src.to(device)
             tgt = tgt.to(device)
             tgt_input = tgt[:, :-1]
-
-            tgt_mask, src_padding_mask, tgt_padding_mask = create_mask(src, tgt_input, pad_id, device)
+            
+            tgt_mask, src_padding_mask, tgt_padding_mask, memory_mask = create_mask(src, tgt_input, pad_id, device)
             
             # (Batch, T_dec, len(vocab))
-            outputs = model(src, tgt_input, tgt_mask, src_padding_mask, tgt_padding_mask)
+            outputs = model(src, tgt_input, tgt_mask, src_padding_mask, tgt_padding_mask, memory_mask)
             # (Batch * T_dec)
             tgt_out = tgt[:, 1:].reshape(-1)
             # (Batch * T_dec, len(vocab))
@@ -141,13 +142,14 @@ def evaluate(model, criterion, dataloader, pad_id, tokenizer, device):
             losses += loss.item()
             total_num += 1 
 
-            argmax = outputs.reshape(tgt.shape[0], tgt.shape[1]-1, -1)[:, :-1, :]
-            argmax = argmax.max(-1)[1] # torch는 max하면 value, index가 나온다
+            ################################################################
+            ### BLEU Score 계산 Inference ###
             predictions, references = [], []
             metric = BLEUScore(n_gram=4)
-            for sample, label in zip(argmax, tgt[:, 1:-1]):
+            for sample, label in zip(src, tgt[:, 1:-1]):
                 # (Tdec)
-                prediction = tokenizer.decode_ids(sample.tolist())
+                token = model.search(sample, max_length=120)
+                prediction = tokenizer.decode_ids(token)
                 reference = tokenizer.decode_ids(label.tolist())
                 predictions.append(prediction)
                 references.append(reference)
@@ -213,30 +215,29 @@ if __name__=='__main__':
     EMB_SIZE = 256
     NHEAD = 4
     FF_DIM = 1024
-    BATCH_SIZE = 64
+    BATCH_SIZE = 4 # 64
     NUM_ENCODER_LAYERS = 6
     NUM_DECODER_LAYERS = 6
-    NUM_WORKERS = 8
+    NUM_WORKERS = 4
     LR = 1e-5
     EPOCHS = 37
     ############### 
 
-    dataset = WMT_Dataset('wmt16_src_train.txt', 'wmt16_tgt_train.txt', tokenizer)
-    dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, collate_fn=WMT_collate, num_workers=NUM_WORKERS)
+    # dataset = WMT_Dataset('wmt16_src_train.txt', 'wmt16_tgt_train.txt', tokenizer)
+    # dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, collate_fn=WMT_collate, num_workers=NUM_WORKERS)
     valid_dataset = WMT_Dataset('wmt16_src_validation.txt', 'wmt16_tgt_validation.txt', tokenizer)
     valid_dataloader = DataLoader(valid_dataset, batch_size=BATCH_SIZE, collate_fn=WMT_collate, num_workers=NUM_WORKERS)
 
     model = Seq2seqTransformer(VOCAB_SIZE, VOCAB_SIZE, NUM_ENCODER_LAYERS, NUM_DECODER_LAYERS, EMB_SIZE, NHEAD, FF_DIM)
-    model = model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
-    num_training_steps = EPOCHS * len(dataloader)
+    # num_training_steps = EPOCHS * len(dataloader)
     
-    lr_scheduler = get_scheduler(
-        "linear",
-        optimizer=optimizer,
-        num_warmup_steps=8000,
-        num_training_steps=num_training_steps
-    )
+    # lr_scheduler = get_scheduler(
+    #     "linear",
+    #     optimizer=optimizer,
+    #     num_warmup_steps=8000,
+    #     num_training_steps=num_training_steps
+    # )
     criterion = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_id())
     
 
@@ -244,21 +245,24 @@ if __name__=='__main__':
                         file_path=os.path.join('.', 'train_log.log'),
                         stream=True)
     
+    load('model_021.pt', model, optimizer, logger)
+    model = model.to(device)
     train_begin = time.time()
     n_epoch = 0
+    
     for epoch in range(0, EPOCHS):
         epoch_start_time = time.time()
 
         # train function
-        train_loss  = train(model, optimizer, criterion, dataloader, tokenizer.pad_id(), train_begin, epoch, device)
-        logger.info('Epoch %d (Training) Loss %0.8f' % (epoch, train_loss))
+        # train_loss  = train(model, optimizer, criterion, dataloader, tokenizer.pad_id(), train_begin, epoch, device)
+        # logger.info('Epoch %d (Training) Loss %0.8f' % (epoch, train_loss))
 
         # evaluate function
         valid_loss, valid_BLEU = evaluate(model, criterion, valid_dataloader, tokenizer.pad_id(), tokenizer, device)
         logger.info('Epoch %d (Evaluate) Loss %0.8f BLEU %0.8f' % (epoch, valid_loss, valid_BLEU))
         
         # make_directory('checkpoint')
-        save(os.path.join('checkpoint', f"model_{epoch:03d}.pt"), model=model, optimizer=optimizer, logger=logger)
+        # save(os.path.join('checkpoint', f"model_{epoch:03d}.pt"), model=model, optimizer=optimizer, logger=logger)
 
         epoch_end_time = time.time()
         n_epoch += 1
