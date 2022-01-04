@@ -40,7 +40,7 @@ class Transformer(nn.Module):
                             tgt_mask=tgt_mask,
                             memory_mask=memory_mask,
                             tgt_key_padding_mask=tgt_key_padding_mask,
-                            memory_key_padding_mask=src_key_padding_mask) ### memory key padding 수정
+                            memory_key_padding_mask=memory_key_padding_mask) ### memory key padding 수정
         return output
 
 
@@ -136,7 +136,7 @@ class TransformerDecoderLayer(nn.Module):
                 memory_key_padding_mask=None):
         x = tgt
         x = x + self._sa_block(self.norm1(x), tgt_mask, tgt_key_padding_mask)
-        x = x + self._ca_block(self.norm2(x), memory, tgt_mask, tgt_key_padding_mask, memory_key_padding_mask)
+        x = x + self._ca_block(self.norm2(x), memory, memory_mask, memory_key_padding_mask)
         x = x + self._ff_block(self.norm3(x))
         return x
 
@@ -145,11 +145,10 @@ class TransformerDecoderLayer(nn.Module):
                            attn_mask=attn_mask,
                            key_padding_mask=key_padding_mask)[0]
         return self.dropout1(x)
-    def _ca_block(self, x, mem, attn_mask=None, key_padding_mask=None, memory_padding_mask=None):
+    def _ca_block(self, x, mem, attn_mask=None, key_padding_mask=None):
         x = self.multihead_attn(x, mem, mem,
                            attn_mask=attn_mask,
                            key_padding_mask=key_padding_mask,
-                           memory_padding_mask=memory_padding_mask,
                            memory=True)[0]
         return self.dropout2(x)
     def _ff_block(self, x):
@@ -171,7 +170,7 @@ class MultiheadAttention(nn.Module):
         self.fc_o = nn.Linear(d_model, d_model)
         self.dropout = nn.Dropout(dropout)
         self.scale = torch.sqrt(torch.FloatTensor([self.head_dim]))
-    def forward(self, query, key, value, attn_mask=None, key_padding_mask=None, memory_padding_mask=None, memory=False):
+    def forward(self, query, key, value, attn_mask=None, key_padding_mask=None, memory=False):
         # query : [batch size, src time steps, hid dim]
         # key : [batch size, src time steps, hid dim]
         # value : [batch size, src time steps, hid dim]
@@ -195,13 +194,14 @@ class MultiheadAttention(nn.Module):
             # (B, 1, 1, T)
             if attn_mask is not None:
                 # 미래 정보 사전관찰 방지 attn_mask
-                # (T, T)
-                tgt_mask = attn_mask.to(query.device) & key_padding_mask.type(torch.bool)
+                # (B, 1, T, T)
                 if memory == True:
-                    memory_padding_mask = memory_padding_mask.unsqueeze(1).unsqueeze(2)
-                    tgt_mask = tgt_mask & memory_padding_mask
-                tgt_mask = tgt_mask.float()
-                energy = energy.masked_fill(tgt_mask == 0, float('-inf'))
+                    subsequent_mask = attn_mask & key_padding_mask.type(torch.bool)
+                    subsequent_mask = subsequent_mask.float() # (B, 1, Tdec, Tenc)
+                else:
+                    tgt_mask = attn_mask & key_padding_mask.type(torch.bool)
+                    subsequent_mask = tgt_mask.float()
+                energy = energy.masked_fill(subsequent_mask == 0, float('-inf'))
             else:
                 key_padding_mask = key_padding_mask.float()
                 energy = energy.masked_fill(key_padding_mask == 0, float('-inf'))
@@ -212,7 +212,6 @@ class MultiheadAttention(nn.Module):
         att_values = att_values.view(batch_size, -1, self.d_model) # view로 concat을 대체한다
         # att_values : [batch size, src time steps, hid dim]
         att_values = self.fc_o(att_values)
-        
         return att_values, att_weights
 
 
@@ -265,18 +264,61 @@ class Seq2seqTransformer(nn.Module):
         self.tgt_tok_emb = TokenEmbedding(tgt_vocab_size, emb_size)
         self.positional_encoding = PositionalEncoding(emb_size, dropout=dropout)
 
-    def forward(self, src, tgt, tgt_mask, src_padding_mask, tgt_padding_mask):
+    def forward(self, src, tgt, tgt_mask, src_padding_mask, tgt_padding_mask, memory_mask):
         src_emb = self.positional_encoding(self.src_tok_emb(src))
         tgt_emb = self.positional_encoding(self.tgt_tok_emb(tgt))
         logits = self.transformer(src = src_emb,
                                   tgt = tgt_emb,
                                   src_mask = None,
                                   tgt_mask = tgt_mask,
-                                  memory_mask = None,
+                                  memory_mask = memory_mask,
                                   src_key_padding_mask = src_padding_mask,
                                   tgt_key_padding_mask = tgt_padding_mask,
-                                  memory_key_padding_mask = None )
+                                  memory_key_padding_mask = src_padding_mask)
         return self.generator(logits)
+    
+    def search(self, src, max_length=180, bos_id=2, eos_id=3):
+        
+        BOS_token = bos_id
+        EOS_token = eos_id
+        
+        y_hats, indice = [], []
+        with torch.no_grad():
+            # ENCODER : src = (T)
+            src_emb = self.positional_encoding(self.src_tok_emb(src.reshape(1, -1))) # 배치 추가
+            memory = self.transformer.encoder(src_emb,
+                                              mask=None,
+                                              src_key_padding_mask=None)
+            # DECODER : BOS 토큰부터 넣기 시작
+            dec_input = torch.LongTensor([[BOS_token]]).to(src.device)
+            dec_input_len = torch.LongTensor([dec_input.size(-1)]).to(src.device)
+            
+            for t in range(max_length):
+                tgt = self.positional_encoding(self.tgt_tok_emb(dec_input))
+                mask = (torch.triu(torch.ones(tgt.size(1), tgt.size(1))) == 1).transpose(0, 1)
+                tgt_mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0)).to(src.device)
+    
+                output = self.transformer.decoder(tgt,
+                                                  memory,
+                                                  tgt_mask=tgt_mask,
+                                                  memory_mask=None,
+                                                  tgt_key_padding_mask=None,
+                                                  memory_key_padding_mask=None)
+                logits = self.generator(output)
+                
+                next_item = logits.topk(1)[1].view(-1)[-1].item()
+                next_item = torch.tensor([[next_item]], device=src.device)
+
+                dec_input = torch.cat([dec_input, next_item], dim=-1).to(src.device)
+                # print("({}) dec_input: {}".format(di, dec_input))
+
+                dec_input_len = torch.LongTensor([dec_input.size(-1)]).to(src.device)
+                
+                if next_item.view(-1).item() == EOS_token:
+                    break
+        
+            return dec_input.view(-1).tolist()[1:]
+
 
 
 def create_mask(src, tgt, pad_id, device):
@@ -285,10 +327,12 @@ def create_mask(src, tgt, pad_id, device):
     tgt_time_steps = tgt.shape[1]     
     tgt_mask = (torch.triu(torch.ones((tgt_time_steps, tgt_time_steps), device=device)) == 1).transpose(0, 1).bool()
     # src_mask = torch.zeros((src_time_steps, src_time_steps), device=device).type(torch.bool)
-    
+
+    # QK^T 의 shape을 맞춰야 하므로 row는 decoder time steps, col은 enc time steps를 넣으면 된다
+    memory_mask = (torch.triu(torch.ones((src_time_steps, tgt_time_steps), device=device)) == 1).transpose(0, 1).bool()
     src_padding_mask = (src != pad_id)
     tgt_padding_mask = (tgt != pad_id)
-    return tgt_mask, src_padding_mask, tgt_padding_mask 
+    return tgt_mask, src_padding_mask, tgt_padding_mask, memory_mask 
 
 if __name__=='__main__':
     UNK_IDX, PAD_IDX, BOS_IDX, EOS_IDX = 0, 1, 2, 3
@@ -305,6 +349,6 @@ if __name__=='__main__':
     tgt_tmp = torch.LongTensor([[5, 5, 7, 8, 3, 1],
                                 [7, 4, 5, 4, 4, 3]])
 
-    tgt_mask, src_padding_mask, tgt_padding_mask = create_mask(src_tmp, tgt_tmp)
-    pred = model(src_tmp, tgt_tmp, tgt_mask, src_padding_mask, tgt_padding_mask)
+    tgt_mask, src_padding_mask, tgt_padding_mask, memory_mask = create_mask(src_tmp, tgt_tmp, 1, None)
+    pred = model(src_tmp, tgt_tmp, tgt_mask, src_padding_mask, tgt_padding_mask, memory_mask)
     print(pred)
