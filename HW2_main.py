@@ -9,7 +9,7 @@ import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from torchmetrics import BLEUScore
 import logging
-# from transformers import get_scheduler
+from transformers import get_scheduler
 
 from HW1_Transformer import *
 
@@ -215,7 +215,7 @@ if __name__=='__main__':
     EMB_SIZE = 256
     NHEAD = 4
     FF_DIM = 1024
-    BATCH_SIZE = 4 # 64
+    BATCH_SIZE = 64 # 4
     NUM_ENCODER_LAYERS = 6
     NUM_DECODER_LAYERS = 6
     NUM_WORKERS = 4
@@ -223,21 +223,21 @@ if __name__=='__main__':
     EPOCHS = 37
     ############### 
 
-    # dataset = WMT_Dataset('wmt16_src_train.txt', 'wmt16_tgt_train.txt', tokenizer)
-    # dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, collate_fn=WMT_collate, num_workers=NUM_WORKERS)
+    dataset = WMT_Dataset('wmt16_src_train.txt', 'wmt16_tgt_train.txt', tokenizer)
+    dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, collate_fn=WMT_collate, num_workers=NUM_WORKERS)
     valid_dataset = WMT_Dataset('wmt16_src_validation.txt', 'wmt16_tgt_validation.txt', tokenizer)
     valid_dataloader = DataLoader(valid_dataset, batch_size=BATCH_SIZE, collate_fn=WMT_collate, num_workers=NUM_WORKERS)
 
     model = Seq2seqTransformer(VOCAB_SIZE, VOCAB_SIZE, NUM_ENCODER_LAYERS, NUM_DECODER_LAYERS, EMB_SIZE, NHEAD, FF_DIM)
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
-    # num_training_steps = EPOCHS * len(dataloader)
+    num_training_steps = EPOCHS * len(dataloader)
     
-    # lr_scheduler = get_scheduler(
-    #     "linear",
-    #     optimizer=optimizer,
-    #     num_warmup_steps=8000,
-    #     num_training_steps=num_training_steps
-    # )
+    lr_scheduler = get_scheduler(
+        "linear",
+        optimizer=optimizer,
+        num_warmup_steps=8000,
+        num_training_steps=num_training_steps
+    )
     criterion = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_id())
     
 
@@ -254,15 +254,15 @@ if __name__=='__main__':
         epoch_start_time = time.time()
 
         # train function
-        # train_loss  = train(model, optimizer, criterion, dataloader, tokenizer.pad_id(), train_begin, epoch, device)
-        # logger.info('Epoch %d (Training) Loss %0.8f' % (epoch, train_loss))
+        train_loss  = train(model, optimizer, criterion, dataloader, tokenizer.pad_id(), train_begin, epoch, device)
+        logger.info('Epoch %d (Training) Loss %0.8f' % (epoch, train_loss))
 
         # evaluate function
         valid_loss, valid_BLEU = evaluate(model, criterion, valid_dataloader, tokenizer.pad_id(), tokenizer, device)
         logger.info('Epoch %d (Evaluate) Loss %0.8f BLEU %0.8f' % (epoch, valid_loss, valid_BLEU))
         
         # make_directory('checkpoint')
-        # save(os.path.join('checkpoint', f"model_{epoch:03d}.pt"), model=model, optimizer=optimizer, logger=logger)
+        save(os.path.join('checkpoint', f"model_{epoch:03d}.pt"), model=model, optimizer=optimizer, logger=logger)
 
         epoch_end_time = time.time()
         n_epoch += 1
