@@ -40,7 +40,7 @@ class Transformer(nn.Module):
                             tgt_mask=tgt_mask,
                             memory_mask=memory_mask,
                             tgt_key_padding_mask=tgt_key_padding_mask,
-                            memory_key_padding_mask=memory_key_padding_mask)
+                            memory_key_padding_mask=src_key_padding_mask) ### memory key padding 수정
         return output
 
 
@@ -136,7 +136,7 @@ class TransformerDecoderLayer(nn.Module):
                 memory_key_padding_mask=None):
         x = tgt
         x = x + self._sa_block(self.norm1(x), tgt_mask, tgt_key_padding_mask)
-        x = x + self._ca_block(self.norm2(x), memory, memory_mask, memory_key_padding_mask)
+        x = x + self._ca_block(self.norm2(x), memory, tgt_mask, tgt_key_padding_mask, memory_key_padding_mask)
         x = x + self._ff_block(self.norm3(x))
         return x
 
@@ -145,10 +145,12 @@ class TransformerDecoderLayer(nn.Module):
                            attn_mask=attn_mask,
                            key_padding_mask=key_padding_mask)[0]
         return self.dropout1(x)
-    def _ca_block(self, x, mem, attn_mask=None, key_padding_mask=None):
+    def _ca_block(self, x, mem, attn_mask=None, key_padding_mask=None, memory_padding_mask=None):
         x = self.multihead_attn(x, mem, mem,
                            attn_mask=attn_mask,
-                           key_padding_mask=key_padding_mask)[0]
+                           key_padding_mask=key_padding_mask,
+                           memory_padding_mask=memory_padding_mask,
+                           memory=True)[0]
         return self.dropout2(x)
     def _ff_block(self, x):
         x = self.linear2(self.dropout(self.activation(self.linear1(x))))
@@ -169,7 +171,7 @@ class MultiheadAttention(nn.Module):
         self.fc_o = nn.Linear(d_model, d_model)
         self.dropout = nn.Dropout(dropout)
         self.scale = torch.sqrt(torch.FloatTensor([self.head_dim]))
-    def forward(self, query, key, value, attn_mask=None, key_padding_mask=None):
+    def forward(self, query, key, value, attn_mask=None, key_padding_mask=None, memory_padding_mask=None, memory=False):
         # query : [batch size, src time steps, hid dim]
         # key : [batch size, src time steps, hid dim]
         # value : [batch size, src time steps, hid dim]
@@ -195,6 +197,9 @@ class MultiheadAttention(nn.Module):
                 # 미래 정보 사전관찰 방지 attn_mask
                 # (T, T)
                 tgt_mask = attn_mask.to(query.device) & key_padding_mask.type(torch.bool)
+                if memory == True:
+                    memory_padding_mask = memory_padding_mask.unsqueeze(1).unsqueeze(2)
+                    tgt_mask = tgt_mask & memory_padding_mask
                 tgt_mask = tgt_mask.float()
                 energy = energy.masked_fill(tgt_mask == 0, float('-inf'))
             else:
