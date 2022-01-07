@@ -114,7 +114,7 @@ def train(model, optimizer, criterion, dataloader, pad_id, train_begin, epoch, d
 
             batch += 1
         print('train completed...')
-        return losses / total_batch_size
+    return losses / total_batch_size
 
 
 def evaluate(model, criterion, dataloader, pad_id, tgt_tokenizer, device):
