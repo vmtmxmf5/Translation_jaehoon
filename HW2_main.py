@@ -113,7 +113,7 @@ def train(model, optimizer, criterion, dataloader, pad_id, train_begin, epoch, d
                 begin = time.time()
 
             batch += 1
-        print('train completed...')
+    print('train completed...')
     return losses / total_batch_size
 
 
