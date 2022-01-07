@@ -15,7 +15,7 @@ if __name__=='__main__':
     sp.load('wmt16_src.model')
 
     # spm.SentencePieceTrainer.train(input='wmt16_tgt_train.txt',
-    #                             model_prefix='wmt16_src',
+    #                             model_prefix='wmt16_tgt',
     #                             vocab_size=8000,
     #                             unk_id=0,
     #                             pad_id=1,
@@ -23,7 +23,7 @@ if __name__=='__main__':
     #                             eos_id=3,
     #                             )
     # sp = spm.SentencePieceProcessor()
-    # sp.load('wmt16_src.model')
+    # sp.load('wmt16_tgt.model')
 
     print(sp.encode_as_pieces('this is a test.'))
 
