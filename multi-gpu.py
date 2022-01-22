@@ -137,6 +137,8 @@ def evaluate(model, criterion, dataloader, pad_id, tgt_tokenizer, device):
             
             # (Batch, T_dec, len(vocab))
             outputs = model(src, tgt_input, src_mask, tgt_mask) #, src_padding_mask, tgt_padding_mask, memory_mask)
+            y_hat = outputs.max(-1)[1]
+            
             # (Batch * T_dec)
             tgt_out = tgt[:, 1:].reshape(-1)
             # (Batch * T_dec, len(vocab))
@@ -148,15 +150,22 @@ def evaluate(model, criterion, dataloader, pad_id, tgt_tokenizer, device):
 
             ################################################################
             ### BLEU Score 계산 Inference ###
+
             predictions, references = [], []
             metric = BLEUScore(n_gram=4)
-            for sample, label in zip(src, tgt[:, 1:-1]):
+            for sample, label in zip(y_hat, tgt[:, 1:-1]):
                 # (Tdec)
-                token = model.search(sample, max_length=120)
-                prediction = tgt_tokenizer.decode_ids(token)
+                prediction = tgt_tokenizer.decode_ids(sample.tolist())
                 reference = tgt_tokenizer.decode_ids(label.tolist())
                 predictions.append(prediction)
                 references.append(reference)
+#             for sample, label in zip(src, tgt[:, 1:-1]):
+#                 # (Tdec)
+#                 token = model.search(sample, max_length=120)
+#                 prediction = tgt_tokenizer.decode_ids(token)
+#                 reference = tgt_tokenizer.decode_ids(label.tolist())
+#                 predictions.append(prediction)
+#                 references.append(reference)
             BLEU = metric(references, predictions)
             epoch_BLEU.append(BLEU)
     print('validation completed...')
