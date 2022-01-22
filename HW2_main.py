@@ -69,10 +69,10 @@ def train(model, optimizer, criterion, dataloader, pad_id, train_begin, epoch, d
             tgt = tgt.to(device)
             tgt_input = tgt[:, :-1]
 
-            tgt_mask, src_padding_mask, tgt_padding_mask, memory_mask = create_mask(src, tgt_input, pad_id, device)
+            src_mask, tgt_mask = create_mask(src, tgt_input, pad_id, device)
 
             # (Batch, T_dec, len(vocab))
-            outputs = model(src, tgt_input, tgt_mask, src_padding_mask, tgt_padding_mask, memory_mask)
+            outputs = model(src, tgt_input, src_mask, tgt_mask) #, src_padding_mask, tgt_padding_mask, memory_mask)
 
             # + 파이토치는 backward path 타고 오면서 누적합된 그라디언트를 사용한다 (for RNN)
             # steps 마다 zero grad로 바꿔주지 않으면 이전 step의 그라디언트를 재활용하게 되고
@@ -131,10 +131,10 @@ def evaluate(model, criterion, dataloader, pad_id, tgt_tokenizer, device):
             tgt = tgt.to(device)
             tgt_input = tgt[:, :-1]
             
-            tgt_mask, src_padding_mask, tgt_padding_mask, memory_mask = create_mask(src, tgt_input, pad_id, device)
+            src_mask, tgt_mask = create_mask(src, tgt_input, pad_id, device)
             
             # (Batch, T_dec, len(vocab))
-            outputs = model(src, tgt_input, tgt_mask, src_padding_mask, tgt_padding_mask, memory_mask)
+            outputs = model(src, tgt_input, src_mask, tgt_mask) #, src_padding_mask, tgt_padding_mask, memory_mask)
             # (Batch * T_dec)
             tgt_out = tgt[:, 1:].reshape(-1)
             # (Batch * T_dec, len(vocab))
@@ -225,7 +225,7 @@ if __name__=='__main__':
     EMB_SIZE = 256
     NHEAD = 4
     FF_DIM = 1024
-    BATCH_SIZE = 64 # 4
+    BATCH_SIZE = 32 # 4
     NUM_ENCODER_LAYERS = 6
     NUM_DECODER_LAYERS = 6
     NUM_WORKERS = 4
@@ -255,7 +255,7 @@ if __name__=='__main__':
                         file_path=os.path.join('.', 'train_log.log'),
                         stream=True)
     
-    load('model_021.pt', model, optimizer, logger)
+#     load('model_021.pt', model, optimizer, logger)
     model = model.to(device)
     train_begin = time.time()
     n_epoch = 0
