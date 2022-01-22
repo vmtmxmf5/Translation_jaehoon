@@ -29,18 +29,17 @@ class Transformer(nn.Module):
                 tgt,
                 src_mask = None,
                 tgt_mask = None,
-                memory_mask = None,
-                src_key_padding_mask = None,
-                tgt_key_padding_mask = None,
-                memory_key_padding_mask = None 
+#                 memory_mask = None,
+#                 src_key_padding_mask = None,
+#                 tgt_key_padding_mask = None,
+#                 memory_key_padding_mask = None 
                 ):
-        memory = self.encoder(src, mask=src_mask, src_key_padding_mask=src_key_padding_mask)
-        output = self.decoder(tgt,
-                            memory,
-                            tgt_mask=tgt_mask,
-                            memory_mask=memory_mask,
-                            tgt_key_padding_mask=tgt_key_padding_mask,
-                            memory_key_padding_mask=memory_key_padding_mask) ### memory key padding 수정
+        memory = self.encoder(src, mask=src_mask) #, src_key_padding_mask=src_key_padding_mask)
+        output = self.decoder(tgt, memory, src_mask, tgt_mask)
+#                             tgt_mask=tgt_mask, # memory mask는 필요없고, memory key padding은 해줘야 src 이상한거 참조 안한다
+#                             memory_mask=memory_mask,
+#                             tgt_key_padding_mask=tgt_key_padding_mask,
+#                             memory_key_padding_mask=memory_key_padding_mask) ### memory key padding 수정
         return output
 
 
@@ -51,10 +50,10 @@ class TransformerEncoder(nn.Module):
         self.layers = nn.ModuleList([copy.deepcopy(encoder_layer) for i in range(num_layers)])
         self.norm = norm
     
-    def forward(self, src, mask=None, src_key_padding_mask=None):
+    def forward(self, src, mask=None): #, src_key_padding_mask=None):
         output = src
         for layer in self.layers:
-            output = layer(output, src_mask=mask, src_key_padding_mask=src_key_padding_mask)
+            output = layer(output, src_mask=mask) #, src_key_padding_mask=src_key_padding_mask)
         output = self.norm(output)
         return output
 
@@ -72,17 +71,16 @@ class TransformerEncoderLayer(nn.Module):
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
         self.activation = F.relu
-    def forward(self, src, src_mask=None, src_key_padding_mask=None):
+    def forward(self, src, src_mask=None): #, src_key_padding_mask=None):
         x = src
         # 레이어 정규화를 먼저하고 합하면 성능이 미미하게 향상
         # 파이토치 튜토리얼에 레퍼런스 있음
-        x = x + self._sa_block(self.norm1(x), src_mask, src_key_padding_mask)
+        x = x + self._sa_block(self.norm1(x), src_mask) #, src_key_padding_mask)
         x = x + self._ff_block(self.norm2(x))
         return x
-    def _sa_block(self, x, attn_mask=None, key_padding_mask=None):
-        x = self.self_attn(x, x, x,
-                           attn_mask=attn_mask,
-                           key_padding_mask=key_padding_mask)[0] # (att. value, att. weight)
+    def _sa_block(self, x, attn_mask=None): #, key_padding_mask=None):
+        x = self.self_attn(x, x, x, attn_mask=attn_mask)[0]
+#                            key_padding_mask=key_padding_mask)[0] # (att. value, att. weight)
         return self.dropout1(x)
     def _ff_block(self, x):
         x = self.linear2(self.dropout(self.activation(self.linear1(x))))
@@ -94,19 +92,18 @@ class TransformerDecoder(nn.Module):
         super().__init__()
         self.layers = nn.ModuleList([copy.deepcopy(decoder_layer) for i in range(num_layers)])
         self.norm = norm
-    def forward(self,
-                tgt,
-                memory,
-                tgt_mask=None,
-                memory_mask=None,
-                tgt_key_padding_mask=None,
-                memory_key_padding_mask=None):
+    def forward(self, tgt, memory, src_mask, tgt_mask):
+#                 tgt_mask=None,
+#                 memory_mask=None,
+#                 tgt_key_padding_mask=None,
+#                 memory_key_padding_mask=None):
         output = tgt
         for layer in self.layers:
-            output = layer(output, memory, tgt_mask=tgt_mask,
-                        memory_mask=memory_mask,
-                        tgt_key_padding_mask=tgt_key_padding_mask,
-                        memory_key_padding_mask=memory_key_padding_mask)
+            output = layer(output, memory, src_mask, tgt_mask) 
+#                            tgt_mask=tgt_mask,
+#                            memory_mask=memory_mask,
+#                            tgt_key_padding_mask=tgt_key_padding_mask,
+#                            memory_key_padding_mask=memory_key_padding_mask)
         output = self.norm(output)
         return output
 
@@ -129,27 +126,27 @@ class TransformerDecoderLayer(nn.Module):
         self.dropout3 = nn.Dropout(dropout)
         self.activation = F.relu
 
-    def forward(self, tgt, memory,
-                tgt_mask=None,
-                memory_mask=None,
-                tgt_key_padding_mask=None,
-                memory_key_padding_mask=None):
+    def forward(self, tgt, memory, src_mask, tgt_mask):
+#                 tgt_mask=None,
+#                 memory_mask=None,
+#                 tgt_key_padding_mask=None,
+#                 memory_key_padding_mask=None):
         x = tgt
-        x = x + self._sa_block(self.norm1(x), tgt_mask, tgt_key_padding_mask)
-        x = x + self._ca_block(self.norm2(x), memory, memory_mask, memory_key_padding_mask)
+        x = x + self._sa_block(self.norm1(x), tgt_mask) #, tgt_key_padding_mask)
+        x = x + self._ca_block(self.norm2(x), memory, src_mask) #, memory_key_padding_mask)
         x = x + self._ff_block(self.norm3(x))
         return x
 
-    def _sa_block(self, x, attn_mask=None, key_padding_mask=None):
-        x = self.self_attn(x, x, x,
-                           attn_mask=attn_mask,
-                           key_padding_mask=key_padding_mask)[0]
+    def _sa_block(self, x, mask): #attn_mask=None, key_padding_mask=None):
+        x = self.self_attn(x, x, x, mask)[0]
+#                            attn_mask=attn_mask,
+#                            key_padding_mask=key_padding_mask)[0]
         return self.dropout1(x)
-    def _ca_block(self, x, mem, attn_mask=None, key_padding_mask=None):
-        x = self.multihead_attn(x, mem, mem,
-                           attn_mask=attn_mask,
-                           key_padding_mask=key_padding_mask,
-                           memory=True)[0]
+    def _ca_block(self, x, mem, mask): # attn_mask=None, key_padding_mask=None):
+        x = self.multihead_attn(x, mem, mem, mask)[0]
+#                            attn_mask=attn_mask,
+#                            key_padding_mask=key_padding_mask,
+#                            memory=True)[0]
         return self.dropout2(x)
     def _ff_block(self, x):
         x = self.linear2(self.dropout(self.activation(self.linear1(x))))
@@ -170,7 +167,7 @@ class MultiheadAttention(nn.Module):
         self.fc_o = nn.Linear(d_model, d_model)
         self.dropout = nn.Dropout(dropout)
         self.scale = torch.sqrt(torch.FloatTensor([self.head_dim]))
-    def forward(self, query, key, value, attn_mask=None, key_padding_mask=None, memory=False):
+    def forward(self, query, key, value, mask,): #attn_mask=None, key_padding_mask=None, memory=False):
         # query : [batch size, src time steps, hid dim]
         # key : [batch size, src time steps, hid dim]
         # value : [batch size, src time steps, hid dim]
@@ -188,23 +185,26 @@ class MultiheadAttention(nn.Module):
         # [batch size, n_heads, src time steps, src time steps]
         
         # padding만 False, 원본은 True
-        if key_padding_mask is not None:
-            # mini batch에 padding이 있다
-            key_padding_mask = key_padding_mask.unsqueeze(1).unsqueeze(2).to(query.device)
-            # (B, 1, 1, T)
-            if attn_mask is not None:
-                # 미래 정보 사전관찰 방지 attn_mask
-                # (B, 1, T, T)
-                if memory == True:
-                    subsequent_mask = attn_mask & key_padding_mask.type(torch.bool)
-                    subsequent_mask = subsequent_mask.float() # (B, 1, Tdec, Tenc)
-                else:
-                    tgt_mask = attn_mask & key_padding_mask.type(torch.bool)
-                    subsequent_mask = tgt_mask.float()
-                energy = energy.masked_fill(subsequent_mask == 0, float('-inf'))
-            else:
-                key_padding_mask = key_padding_mask.float()
-                energy = energy.masked_fill(key_padding_mask == 0, float('-inf'))
+#         if key_padding_mask is not None:
+#             # mini batch에 padding이 있다
+#             key_padding_mask = key_padding_mask.unsqueeze(1).unsqueeze(2)
+#             # (B, 1, 1, T)
+#             if attn_mask is not None:
+#                 # 미래 정보 사전관찰 방지 attn_mask
+#                 # (B, 1, T, T)
+#                 if memory == True:
+#                     subsequent_mask = attn_mask & key_padding_mask.type(torch.bool)
+#                     subsequent_mask = subsequent_mask.float() # (B, 1, Tdec, Tenc)
+#                 else:
+#                     tgt_mask = attn_mask & key_padding_mask.type(torch.bool)
+#                     subsequent_mask = tgt_mask.float()
+#                 energy = energy.masked_fill(subsequent_mask == 0, float('-inf'))
+#             else:
+#                 key_padding_mask = key_padding_mask.float()
+#                 energy = energy.masked_fill(key_padding_mask == 0, float('-inf'))
+        if mask is not None:
+            energy = energy.masked_fill(mask == 0, float('-inf'))
+            
         att_weights = torch.softmax(energy, dim=-1) # [batch size, n_heads, src time steps, src time steps]
         att_values = torch.matmul(self.dropout(att_weights), V)
         att_values = att_values.permute(0, 2, 1, 3).contiguous()
@@ -264,17 +264,17 @@ class Seq2seqTransformer(nn.Module):
         self.tgt_tok_emb = TokenEmbedding(tgt_vocab_size, emb_size)
         self.positional_encoding = PositionalEncoding(emb_size, dropout=dropout)
 
-    def forward(self, src, tgt, tgt_mask, src_padding_mask, tgt_padding_mask, memory_mask):
+    def forward(self, src, tgt, src_mask, tgt_mask): # , src_padding_mask, tgt_padding_mask, memory_mask):
         src_emb = self.positional_encoding(self.src_tok_emb(src))
         tgt_emb = self.positional_encoding(self.tgt_tok_emb(tgt))
         logits = self.transformer(src = src_emb,
                                   tgt = tgt_emb,
-                                  src_mask = None,
-                                  tgt_mask = tgt_mask,
-                                  memory_mask = memory_mask,
-                                  src_key_padding_mask = src_padding_mask,
-                                  tgt_key_padding_mask = tgt_padding_mask,
-                                  memory_key_padding_mask = src_padding_mask)
+                                  src_mask = src_mask,
+                                  tgt_mask = tgt_mask)
+#                                   memory_mask = memory_mask,
+#                                   src_key_padding_mask = src_padding_mask,
+#                                   tgt_key_padding_mask = tgt_padding_mask,
+#                                   memory_key_padding_mask = src_padding_mask)
         return self.generator(logits)
     
     def search(self, src, max_length=180, bos_id=2, eos_id=3):
@@ -320,19 +320,19 @@ class Seq2seqTransformer(nn.Module):
             return dec_input.view(-1).tolist()[1:]
 
 
-
 def create_mask(src, tgt, pad_id, device):
     # 배치 고려
     src_time_steps = src.shape[1]
     tgt_time_steps = tgt.shape[1]     
-    tgt_mask = (torch.triu(torch.ones((tgt_time_steps, tgt_time_steps), device=device)) == 1).transpose(0, 1).bool()
+    tgt_sub_mask = torch.tril(torch.ones((tgt_time_steps, tgt_time_steps), device=device)).bool()
     # src_mask = torch.zeros((src_time_steps, src_time_steps), device=device).type(torch.bool)
 
     # QK^T 의 shape을 맞춰야 하므로 row는 decoder time steps, col은 enc time steps를 넣으면 된다
-    memory_mask = (torch.triu(torch.ones((src_time_steps, tgt_time_steps), device=device)) == 1).transpose(0, 1).bool()
-    src_padding_mask = (src != pad_id)
-    tgt_padding_mask = (tgt != pad_id)
-    return tgt_mask, src_padding_mask, tgt_padding_mask, memory_mask 
+    # memory_mask = torch.triu(torch.ones((src_time_steps, tgt_time_steps), device=device)).bool()
+    src_padding_mask = (src != pad_id).unsqueeze(1).unsqueeze(2)
+    tgt_padding_mask = (tgt != pad_id).unsqueeze(1).unsqueeze(2)
+    tgt_mask = tgt_sub_mask & tgt_padding_mask
+    return src_padding_mask, tgt_mask #, tgt_padding_mask, memory_mask 
 
 if __name__=='__main__':
     UNK_IDX, PAD_IDX, BOS_IDX, EOS_IDX = 0, 1, 2, 3
