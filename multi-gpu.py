@@ -88,7 +88,7 @@ def train(model, optimizer, criterion, dataloader, pad_id, train_begin, epoch, d
             loss = criterion(outputs, tgt_out)
 
             # https://tutorials.pytorch.kr/beginner/blitz/autograd_tutorial.html
-            accelerator.backward() # 계산 그래프 타고 부모 노드에서 자식노드로 그라디언트 계산(compute) 시작
+            accelerator.backward(loss) # 계산 그래프 타고 부모 노드에서 자식노드로 그라디언트 계산(compute) 시작
             ## 이 때 requires_grad=True인 텐서에 대해서만 gradient of loss 계산해서 parameter.grad에 저장한다
 
             # grad_norm? gradient가 너무 커지면 gradient exploding일어날 수 있으니 그 경우 통제
@@ -275,7 +275,7 @@ if __name__=='__main__':
         epoch_start_time = time.time()
 
         # train function
-        train_loss  = train(model, optimizer, criterion, dataloader, src_tokenizer.pad_id(), train_begin, epoch, device)
+        train_loss  = train(model, optimizer, criterion, dataloader, src_tokenizer.pad_id(), train_begin, epoch, device, accelerator)
         logger.info('Epoch %d (Training) Loss %0.8f' % (epoch, train_loss))
 
         # evaluate function
