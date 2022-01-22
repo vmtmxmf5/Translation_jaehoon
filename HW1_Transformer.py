@@ -349,6 +349,6 @@ if __name__=='__main__':
     tgt_tmp = torch.LongTensor([[5, 5, 7, 8, 3, 1],
                                 [7, 4, 5, 4, 4, 3]])
 
-    tgt_mask, src_padding_mask, tgt_padding_mask, memory_mask = create_mask(src_tmp, tgt_tmp, 1, None)
-    pred = model(src_tmp, tgt_tmp, tgt_mask, src_padding_mask, tgt_padding_mask, memory_mask)
+    src_mask, tgt_mask = create_mask(src_tmp, tgt_tmp, 1, None)
+    pred = model(src_tmp, tgt_tmp, src_mask, tgt_mask) #, src_padding_mask, tgt_padding_mask, memory_mask)
     print(pred)
