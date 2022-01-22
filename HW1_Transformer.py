@@ -34,7 +34,7 @@ class Transformer(nn.Module):
 #                 tgt_key_padding_mask = None,
 #                 memory_key_padding_mask = None 
                 ):
-        memory = self.encoder(src, mask=src_mask) #, src_key_padding_mask=src_key_padding_mask)
+        memory = self.encoder(src, src_mask) #, src_key_padding_mask=src_key_padding_mask)
         output = self.decoder(tgt, memory, src_mask, tgt_mask)
 #                             tgt_mask=tgt_mask, # memory mask는 필요없고, memory key padding은 해줘야 src 이상한거 참조 안한다
 #                             memory_mask=memory_mask,
@@ -50,10 +50,10 @@ class TransformerEncoder(nn.Module):
         self.layers = nn.ModuleList([copy.deepcopy(encoder_layer) for i in range(num_layers)])
         self.norm = norm
     
-    def forward(self, src, mask=None): #, src_key_padding_mask=None):
+    def forward(self, src, src_mask=None): #, src_key_padding_mask=None):
         output = src
         for layer in self.layers:
-            output = layer(output, src_mask=mask) #, src_key_padding_mask=src_key_padding_mask)
+            output = layer(output, src_mask) #, src_key_padding_mask=src_key_padding_mask)
         output = self.norm(output)
         return output
 
@@ -78,8 +78,8 @@ class TransformerEncoderLayer(nn.Module):
         x = x + self._sa_block(self.norm1(x), src_mask) #, src_key_padding_mask)
         x = x + self._ff_block(self.norm2(x))
         return x
-    def _sa_block(self, x, attn_mask=None): #, key_padding_mask=None):
-        x = self.self_attn(x, x, x, attn_mask=attn_mask)[0]
+    def _sa_block(self, x, src_mask=None): #, key_padding_mask=None):
+        x = self.self_attn(x, x, x, src_mask)[0]
 #                            key_padding_mask=key_padding_mask)[0] # (att. value, att. weight)
         return self.dropout1(x)
     def _ff_block(self, x):
