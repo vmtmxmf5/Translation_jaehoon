@@ -203,21 +203,23 @@ def load(filename, model, optimizer, logger):
 
 
 if __name__=='__main__':
-    device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+    # device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+    ## inference mode
+    device = torch.device('cpu')
     src_tokenizer = spm.SentencePieceProcessor()
     src_tokenizer.load('wmt16_src.model')
     tgt_tokenizer = spm.SentencePieceProcessor()
     tgt_tokenizer.load('wmt16_tgt.model')
 
-    with open('restriced_vocab_src.json', 'r') as f:
-        vocabs = json.load(f)
+#     with open('restriced_vocab_src.json', 'r') as f:
+#         vocabs = json.load(f)
     
-    src_tokenizer.set_vocabulary(vocabs)
+#     src_tokenizer.set_vocabulary(vocabs)
     
-    with open('restriced_vocab_tgt.json', 'r') as f:
-        vocabs = json.load(f)
+#     with open('restriced_vocab_tgt.json', 'r') as f:
+#         vocabs = json.load(f)
     
-    tgt_tokenizer.set_vocabulary(vocabs)
+#     tgt_tokenizer.set_vocabulary(vocabs)
 
     ### config ###
     SRC_VOCAB_SIZE = src_tokenizer.get_piece_size()
