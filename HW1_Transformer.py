@@ -285,38 +285,43 @@ class Seq2seqTransformer(nn.Module):
         y_hats, indice = [], []
         with torch.no_grad():
             # ENCODER : src = (T)
-            src_emb = self.positional_encoding(self.src_tok_emb(src.reshape(1, -1))) # 배치 추가
+            # src_emb = self.positional_encoding(self.src_tok_emb(src.reshape(1, -1))) # 배치 추가
+            batch_size = 1
+            src_len = src.shape[0]
+
+            src_pos = torch.arange(0, src_len).unsqueeze(0).repeat(batch_size, 1)
+            src_emb = self.src_tok_emb(src.reshape(1, -1)) * self.scale + self.src_pos_emb(src_pos)
             memory = self.transformer.encoder(src_emb,
-                                              mask=None,
-                                              src_key_padding_mask=None)
+                                              src_mask=None)
+                                              # src_key_padding_mask=None)
             # DECODER : BOS 토큰부터 넣기 시작
-            dec_input = torch.LongTensor([[BOS_token]]).to(src.device)
-            dec_input_len = torch.LongTensor([dec_input.size(-1)]).to(src.device)
-            
+            dec_input = torch.LongTensor([[BOS_token]])
+            dec_input_len = torch.LongTensor([dec_input.size(-1)])
+
             for t in range(max_length):
-                tgt = self.positional_encoding(self.tgt_tok_emb(dec_input))
+                tgt = self.tgt_tok_emb(dec_input) * self.scale + self.tgt_pos_emb(torch.LongTensor([t]))
                 mask = (torch.triu(torch.ones(tgt.size(1), tgt.size(1))) == 1).transpose(0, 1)
-                tgt_mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0)).to(src.device)
-    
+                tgt_mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+
                 output = self.transformer.decoder(tgt,
                                                   memory,
-                                                  tgt_mask=tgt_mask,
-                                                  memory_mask=None,
-                                                  tgt_key_padding_mask=None,
-                                                  memory_key_padding_mask=None)
+                                                  src_mask=None,
+                                                  tgt_mask=None)
+                                                #  tgt_key_padding_mask=None,
+                                                #  memory_key_padding_mask=None)
                 logits = self.generator(output)
-                
-                next_item = logits.topk(1)[1].view(-1)[-1].item()
-                next_item = torch.tensor([[next_item]], device=src.device)
 
-                dec_input = torch.cat([dec_input, next_item], dim=-1).to(src.device)
+                next_item = logits.topk(5)[1].view(-1)[-1].item()
+                next_item = torch.tensor([[next_item]])
+
+                dec_input = torch.cat([dec_input, next_item], dim=-1)
                 # print("({}) dec_input: {}".format(di, dec_input))
 
-                dec_input_len = torch.LongTensor([dec_input.size(-1)]).to(src.device)
-                
+                dec_input_len = torch.LongTensor([dec_input.size(-1)])
+
                 if next_item.view(-1).item() == EOS_token:
                     break
-        
+
             return dec_input.view(-1).tolist()[1:]
 
 
