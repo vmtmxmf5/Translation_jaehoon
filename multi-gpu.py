@@ -236,7 +236,7 @@ if __name__=='__main__':
     EMB_SIZE = 256
     NHEAD = 4
     FF_DIM = 1024
-    BATCH_SIZE = 32 # 4
+    BATCH_SIZE = 192 # 4
     NUM_ENCODER_LAYERS = 6
     NUM_DECODER_LAYERS = 6
     NUM_WORKERS = 8
