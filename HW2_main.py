@@ -227,10 +227,10 @@ if __name__=='__main__':
     EMB_SIZE = 256
     NHEAD = 4
     FF_DIM = 1024
-    BATCH_SIZE = 32 # 4
+    BATCH_SIZE = 1 # 4
     NUM_ENCODER_LAYERS = 6
     NUM_DECODER_LAYERS = 6
-    NUM_WORKERS = 4
+    NUM_WORKERS = 0
     LR = 1e-5
     EPOCHS = 37
     ############### 
@@ -266,8 +266,8 @@ if __name__=='__main__':
         epoch_start_time = time.time()
 
         # train function
-        train_loss  = train(model, optimizer, criterion, dataloader, src_tokenizer.pad_id(), train_begin, epoch, device)
-        logger.info('Epoch %d (Training) Loss %0.8f' % (epoch, train_loss))
+        # train_loss  = train(model, optimizer, criterion, dataloader, src_tokenizer.pad_id(), train_begin, epoch, device)
+        # logger.info('Epoch %d (Training) Loss %0.8f' % (epoch, train_loss))
 
         # evaluate function
         valid_loss, valid_BLEU = evaluate(model, criterion, valid_dataloader, src_tokenizer.pad_id(), tgt_tokenizer, device)
