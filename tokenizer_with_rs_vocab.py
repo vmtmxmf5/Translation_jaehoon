@@ -3,7 +3,7 @@ import json
 
 if __name__=='__main__':
     # 여기서 생성되는 vocab은 단순히 ref. 용이다
-    # spm.SentencePieceTrainer.train(input='wmt16_src_train.txt',
+    # spm.SentencePieceTrainer.train(input='clean_wmt16_src_train.txt',
     #                                 model_prefix='wmt16_src',
     #                                 vocab_size=8000,
     #                                 unk_id=0,
@@ -14,7 +14,7 @@ if __name__=='__main__':
     sp = spm.SentencePieceProcessor()
     sp.load('wmt16_src.model')
 
-    # spm.SentencePieceTrainer.train(input='wmt16_tgt_train.txt',
+    # spm.SentencePieceTrainer.train(input='clean_wmt16_tgt_train.txt',
     #                             model_prefix='wmt16_tgt',
     #                             vocab_size=8000,
     #                             unk_id=0,
