@@ -189,7 +189,7 @@ def get_logger(name: str, file_path: str, stream=False):
     return logger
 
 
-def save(filename, model, optimizer, logger):
+def save(filename, model, logger):
     state = {
         'model': model.state_dict(),
         # 'optimizer': optimizer.state_dict()
@@ -286,7 +286,7 @@ if __name__=='__main__':
         logger.info('Epoch %d (Evaluate) Loss %0.8f BLEU %0.8f' % (epoch, valid_loss, valid_BLEU))
         
         # make_directory('checkpoint')
-        save(os.path.join('checkpoint', f"model_{epoch:03d}.pt"), model=model, optimizer=optimizer, logger=logger)
+        save(os.path.join('checkpoint', f"model_{epoch:03d}.pt"), model, logger)
 
         epoch_end_time = time.time()
         n_epoch += 1
