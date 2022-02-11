@@ -4,5 +4,6 @@
 단어집합 생성  : tokenizer_rs_with_voacb.py   
   
 학습 : multi-gpu.py // HW2_main.py (single gpu)  
+ |-- A100 기준 bs : 192 
   
 추론 : HW2_main은 validation setting 상태임  
