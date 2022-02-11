@@ -13,16 +13,18 @@ class Transformer(nn.Module):
                 num_dec_layers:int = 6,
                 ff_dim:int = 1024,
                 layer_norm_eps:float = 1e-5,
-                dropout:float = 0.1):
+                dropout:float = 0.1,
+                src_vocab_size:int = None,
+                tgt_vocab_size:int = None):
         super(Transformer, self).__init__()
         encoder_layer = TransformerEncoderLayer(d_model, nhead, ff_dim, dropout)
         # pytorch default eps ==> 분모의 stability를 위해서 더함
         encoder_norm = nn.LayerNorm(d_model, layer_norm_eps)
-        self.encoder = TransformerEncoder(encoder_layer, num_enc_layers, encoder_norm)
+        self.encoder = TransformerEncoder(encoder_layer, num_enc_layers, encoder_norm, d_model, src_vocab_size)
 
         decoder_layer = TransformerDecoderLayer(d_model, nhead, ff_dim, dropout)
         decoder_norm = nn.LayerNorm(d_model, layer_norm_eps)
-        self.decoder = TransformerDecoder(decoder_layer, num_dec_layers, decoder_norm)
+        self.decoder = TransformerDecoder(decoder_layer, num_dec_layers, decoder_norm, d_model, tgt_vocab_size)
 
     def forward(self,
                 src,
@@ -42,16 +44,24 @@ class Transformer(nn.Module):
 #                             memory_key_padding_mask=memory_key_padding_mask) ### memory key padding 수정
         return output
 
-
 class TransformerEncoder(nn.Module):
-    def __init__(self, encoder_layer, num_layers, norm=None):
+    def __init__(self, encoder_layer, num_layers, norm, d_model, src_vocab_size):
         super().__init__()
         # 객체를 생성하지 않았으므로 layer를 복사
         self.layers = nn.ModuleList([copy.deepcopy(encoder_layer) for i in range(num_layers)])
         self.norm = norm
+        self.scale = torch.sqrt(torch.FloatTensor([d_model]))
+        self.src_tok_emb = nn.Embedding(src_vocab_size, d_model) # hid dim == emb dim
+        self.src_pos_emb = nn.Embedding(512, d_model) # 우리 모델은 최대 max_length 만큼의 토큰 개수 만큼을 '한 문장'으로 받아들일 수 있다
+        self.dropout = nn.Dropout(0.1)
     
     def forward(self, src, src_mask=None): #, src_key_padding_mask=None):
-        output = src
+        batch_size = src.shape[0]
+        src_len = src.shape[1]
+        src_pos = torch.arange(0, src_len).unsqueeze(0).repeat(batch_size, 1).to(src.device)
+        src_emb = self.dropout((self.src_tok_emb(src) * self.scale.to(src.device)) + self.src_pos_emb(src_pos))     
+        
+        output = src_emb
         for layer in self.layers:
             output = layer(output, src_mask) #, src_key_padding_mask=src_key_padding_mask)
         output = self.norm(output)
@@ -88,16 +98,25 @@ class TransformerEncoderLayer(nn.Module):
 
 
 class TransformerDecoder(nn.Module):
-    def __init__(self, decoder_layer, num_layers, norm=None):
+    def __init__(self, decoder_layer, num_layers, norm, d_model, tgt_vocab_size):
         super().__init__()
         self.layers = nn.ModuleList([copy.deepcopy(decoder_layer) for i in range(num_layers)])
         self.norm = norm
+        self.scale = torch.sqrt(torch.FloatTensor([d_model]))
+        self.tgt_tok_emb = nn.Embedding(tgt_vocab_size, d_model) # hid dim == emb dim
+        self.tgt_pos_emb = nn.Embedding(512, d_model) # 우리 모델은 최대 max_length 만큼의 토큰 개수 만큼을 '한 >문장'으로 받아들일 수 있다
+        self.dropout = nn.Dropout(0.1)
     def forward(self, tgt, memory, src_mask, tgt_mask):
 #                 tgt_mask=None,
 #                 memory_mask=None,
 #                 tgt_key_padding_mask=None,
 #                 memory_key_padding_mask=None):
-        output = tgt
+        batch_size = tgt.shape[0]
+        tgt_len = tgt.shape[1]
+        tgt_pos = torch.arange(0, tgt_len).unsqueeze(0).repeat(batch_size, 1).to(tgt.device)
+        tgt_emb = self.dropout((self.tgt_tok_emb(tgt) * self.scale.to(tgt.device)) + self.tgt_pos_emb(tgt_pos))
+       
+        output = tgt_emb
         for layer in self.layers:
             output = layer(output, memory, src_mask, tgt_mask) 
 #                            tgt_mask=tgt_mask,
@@ -204,7 +223,7 @@ class MultiheadAttention(nn.Module):
 #                 energy = energy.masked_fill(key_padding_mask == 0, float('-inf'))
         if mask is not None:
             energy = energy.masked_fill(mask == 0, float('-inf'))
-            
+            # print(energy)
         att_weights = torch.softmax(energy, dim=-1) # [batch size, n_heads, src time steps, src time steps]
         att_values = torch.matmul(self.dropout(att_weights), V)
         att_values = att_values.permute(0, 2, 1, 3).contiguous()
@@ -251,78 +270,103 @@ class Seq2seqTransformer(nn.Module):
                 emb_size: int = 512,
                 nhead: int = 8,
                 ff_dim: int = 512,
-                dropout: float = 0.1):
+                dropout: float = 0.1,
+                ):
         super().__init__()
         self.transformer = Transformer(d_model=emb_size,
                                     nhead=nhead,
                                     num_enc_layers=num_enc_layers,
                                     num_dec_layers=num_dec_layers,
                                     ff_dim=ff_dim,
-                                    dropout=dropout)
+                                    dropout=dropout,
+                                    src_vocab_size=src_vocab_size,
+                                    tgt_vocab_size=tgt_vocab_size)
         self.generator = nn.Linear(emb_size, tgt_vocab_size)
-        self.src_tok_emb = TokenEmbedding(src_vocab_size, emb_size)
-        self.tgt_tok_emb = TokenEmbedding(tgt_vocab_size, emb_size)
-        self.positional_encoding = PositionalEncoding(emb_size, dropout=dropout)
-
+        self.scale = torch.sqrt(torch.FloatTensor([emb_size]))
+        self.dropout = nn.Dropout(dropout)
+        # self.src_tok_emb = TokenEmbedding(src_vocab_size, emb_size)
+        # self.tgt_tok_emb = TokenEmbedding(tgt_vocab_size, emb_size)
+        # self.positional_encoding = PositionalEncoding(emb_size, dropout=dropout)
+        # self.src_tok_emb = nn.Embedding(src_vocab_size, emb_size) # hid dim == emb dim
+        # self.src_pos_emb = nn.Embedding(512, emb_size) # 우리 모델은 최대 max_length 만큼의 토큰 개수 만큼을 '한 문장'으로 받아들일 수 있다
+        # self.tgt_tok_emb = nn.Embedding(tgt_vocab_size, emb_size) # hid dim == emb dim
+        # self.tgt_pos_emb = nn.Embedding(512, emb_size) # 우리 모델은 최대 max_length 만큼의 토큰 개수 만큼을 '한 >문장'으로 받아들일 수 있다
+        self._reset_parameters()
+    def _reset_parameters(self):
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+    
     def forward(self, src, tgt, src_mask, tgt_mask): # , src_padding_mask, tgt_padding_mask, memory_mask):
-        src_emb = self.positional_encoding(self.src_tok_emb(src))
-        tgt_emb = self.positional_encoding(self.tgt_tok_emb(tgt))
-        logits = self.transformer(src = src_emb,
-                                  tgt = tgt_emb,
+        # batch_size = src.shape[0]
+        # src_len = src.shape[1]
+        # tgt_len = tgt.shape[1]                  
+        # src_pos = torch.arange(0, src_len).unsqueeze(0).repeat(batch_size, 1).to(src.device)
+        # tgt_pos = torch.arange(0, tgt_len).unsqueeze(0).repeat(batch_size, 1).to(src.device)
+        # src_emb = self.dropout((self.src_tok_emb(src) * self.scale.to(src.device)) + self.src_pos_emb(src_pos))
+        # tgt_emb = self.dropout((self.tgt_tok_emb(tgt) * self.scale.to(src.device)) + self.tgt_pos_emb(tgt_pos))
+        # src_emb = self.positional_encoding(self.src_tok_emb(src))
+        # tgt_emb = self.positional_encoding(self.tgt_tok_emb(tgt))
+        logits = self.transformer(src = src,
+                                  tgt = tgt,
                                   src_mask = src_mask,
                                   tgt_mask = tgt_mask)
 #                                   memory_mask = memory_mask,
 #                                   src_key_padding_mask = src_padding_mask,
 #                                   tgt_key_padding_mask = tgt_padding_mask,
 #                                   memory_key_padding_mask = src_padding_mask)
-        return self.generator(logits)
+        return F.log_softmax(self.generator(logits), dim=-1) ## rev.
     
-    def search(self, src, max_length=180, bos_id=2, eos_id=3):
+    def search(self, src, src_mask, max_length=20, bos_id=2, eos_id=3):
         
         BOS_token = bos_id
         EOS_token = eos_id
-        
+
         y_hats, indice = [], []
         with torch.no_grad():
             # ENCODER : src = (T)
             # src_emb = self.positional_encoding(self.src_tok_emb(src.reshape(1, -1))) # 배치 추가
-            batch_size = 1
-            src_len = src.shape[0]
-
-            src_pos = torch.arange(0, src_len).unsqueeze(0).repeat(batch_size, 1)
-            src_emb = self.src_tok_emb(src.reshape(1, -1)) * self.scale + self.src_pos_emb(src_pos)
-            memory = self.transformer.encoder(src_emb,
-                                              src_mask=None)
+            # batch_size = 1
+            # src_len = src.shape[0]
+            
+            # src_pos = torch.arange(0, src_len).unsqueeze(0).repeat(batch_size, 1)
+            # src_emb = self.src_tok_emb(src.reshape(1, -1)) * self.scale + self.src_pos_emb(src_pos)
+            
+            ######### batch size 1 #######################
+            memory = self.transformer.encoder(src.reshape(1, -1),
+                                              src_mask=src_mask)
                                               # src_key_padding_mask=None)
             # DECODER : BOS 토큰부터 넣기 시작
             dec_input = torch.LongTensor([[BOS_token]])
             dec_input_len = torch.LongTensor([dec_input.size(-1)])
-
+            
             for t in range(max_length):
-                tgt = self.tgt_tok_emb(dec_input) * self.scale + self.tgt_pos_emb(torch.LongTensor([t]))
-                mask = (torch.triu(torch.ones(tgt.size(1), tgt.size(1))) == 1).transpose(0, 1)
-                tgt_mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
-
-                output = self.transformer.decoder(tgt,
+                # tgt_pos = torch.arange(0, dec_input_len.item()).unsqueeze(0).repeat(batch_size, 1)
+                # tgt = self.tgt_tok_emb(dec_input) * self.scale + self.tgt_pos_emb(torch.LongTensor(tgt_pos))
+                # mask = (torch.triu(torch.ones(tgt.size(1), tgt.size(1))) == 1).transpose(0, 1)
+                # tgt_mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+                
+                ## rev.
+                logits = self.transformer.decoder(dec_input,
                                                   memory,
-                                                  src_mask=None,
+                                                  src_mask=src_mask,
                                                   tgt_mask=None)
                                                 #  tgt_key_padding_mask=None,
                                                 #  memory_key_padding_mask=None)
-                logits = self.generator(output)
-
-                next_item = logits.topk(5)[1].view(-1)[-1].item()
+                output = F.log_softmax(self.generator(logits), dim=-1) ## rev.
+                
+                next_item = output.topk(5)[1].view(-1)[-1].item()
                 next_item = torch.tensor([[next_item]])
 
                 dec_input = torch.cat([dec_input, next_item], dim=-1)
                 # print("({}) dec_input: {}".format(di, dec_input))
 
                 dec_input_len = torch.LongTensor([dec_input.size(-1)])
-
+                
                 if next_item.view(-1).item() == EOS_token:
                     break
-
-            return dec_input.view(-1).tolist()[1:]
+        
+        return dec_input.view(-1).tolist()[1:]
 
 
 def create_mask(src, tgt, pad_id, device):
@@ -355,5 +399,5 @@ if __name__=='__main__':
                                 [7, 4, 5, 4, 4, 3]])
 
     src_mask, tgt_mask = create_mask(src_tmp, tgt_tmp, 1, None)
-    pred = model(src_tmp, tgt_tmp, src_mask, tgt_mask) #, src_padding_mask, tgt_padding_mask, memory_mask)
-    print(pred)
+    pred = model(src_tmp, tgt_tmp, src_mask, tgt_mask)#, src_padding_mask, tgt_padding_mask, memory_mask)
+    # print(pred)
