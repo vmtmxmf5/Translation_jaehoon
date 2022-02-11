@@ -65,56 +65,56 @@ def train(model, optimizer, criterion, dataloader, pad_id, train_begin, epoch, d
     losses, batch = 0, 0
     print('train start...')
     for src, tgt in dataloader:
-        if src.shape[1] < 100 and tgt.shape[1] < 100:
+        # if src.shape[1] < 100 and tgt.shape[1] < 100:
 #             src = src.to(device)
 #             tgt = tgt.to(device)
-            tgt_input = tgt[:, :-1]
+        tgt_input = tgt[:, :-1]
 
-            src_mask, tgt_mask = create_mask(src, tgt_input, pad_id, device)
+        src_mask, tgt_mask = create_mask(src, tgt_input, pad_id, device)
 
-            # (Batch, T_dec, len(vocab))
-            outputs = model(src, tgt_input, src_mask, tgt_mask) #, src_padding_mask, tgt_padding_mask, memory_mask)
+        # (Batch, T_dec, len(vocab))
+        outputs = model(src, tgt_input, src_mask, tgt_mask) #, src_padding_mask, tgt_padding_mask, memory_mask)
 
-            # + 파이토치는 backward path 타고 오면서 누적합된 그라디언트를 사용한다 (for RNN)
-            # steps 마다 zero grad로 바꿔주지 않으면 이전 step의 그라디언트를 재활용하게 되고
-            # 그건 loss를 min(max)하는 방향과는 다른 방향으로 update를 이끌 수 있다
-            optimizer.zero_grad()
+        # + 파이토치는 backward path 타고 오면서 누적합된 그라디언트를 사용한다 (for RNN)
+        # steps 마다 zero grad로 바꿔주지 않으면 이전 step의 그라디언트를 재활용하게 되고
+        # 그건 loss를 min(max)하는 방향과는 다른 방향으로 update를 이끌 수 있다
+        optimizer.zero_grad()
 
-            # (Batch * T_dec)
-            tgt_out = tgt[:, 1:].reshape(-1)
-            # (Batch * T_dec, len(vocab))
-            outputs = outputs.reshape(-1, outputs.shape[-1])
-            # 실험해보니 loss는 input 2차원, target 1차원을 입력으로 받았음 (그래서 reshape 해야 함)
-            loss = criterion(outputs, tgt_out)
+        # (Batch * T_dec)
+        tgt_out = tgt[:, 1:].reshape(-1)
+        # (Batch * T_dec, len(vocab))
+        outputs = outputs.reshape(-1, outputs.shape[-1])
+        # 실험해보니 loss는 input 2차원, target 1차원을 입력으로 받았음 (그래서 reshape 해야 함)
+        loss = criterion(outputs, tgt_out)
 
-            # https://tutorials.pytorch.kr/beginner/blitz/autograd_tutorial.html
-            accelerator.backward(loss) # 계산 그래프 타고 부모 노드에서 자식노드로 그라디언트 계산(compute) 시작
-            ## 이 때 requires_grad=True인 텐서에 대해서만 gradient of loss 계산해서 parameter.grad에 저장한다
+        # https://tutorials.pytorch.kr/beginner/blitz/autograd_tutorial.html
+        accelerator.backward(loss) # 계산 그래프 타고 부모 노드에서 자식노드로 그라디언트 계산(compute) 시작
+        ## 이 때 requires_grad=True인 텐서에 대해서만 gradient of loss 계산해서 parameter.grad에 저장한다
 
-            # grad_norm? gradient가 너무 커지면 gradient exploding일어날 수 있으니 그 경우 통제
-            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+        # grad_norm? gradient가 너무 커지면 gradient exploding일어날 수 있으니 그 경우 통제
+        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
 
-            optimizer.step() # parameter tensor의 .grad라는 attribute에 저장되어 있는 그라디언트를 꺼내서 옵티마이저 업데이트
-            lr_scheduler.step()
+        optimizer.step() # parameter tensor의 .grad라는 attribute에 저장되어 있는 그라디언트를 꺼내서 옵티마이저 업데이트
+        lr_scheduler.step()
 
-            losses += loss.item()
-            total_num += 1  
-            
-            if accelerator.is_local_main_process:
-              if batch % print_batch == 0:
-                  current = time.time()
-                  elapsed = current - begin
-                  epoch_elapsed = (current - epoch_begin) / 60.0
-                  train_elapsed = (current - train_begin) / 3600.0
+        losses += loss.item()
+        total_num += 1  
 
-                  print('epoch: {:4d}, batch: {:5d}/{:5d}, lr: {:.16f},\nloss: {:.8f}, elapsed: {:6.2f}s {:6.2f}m {:6.2f}h'.format(
-                          epoch, batch, total_batch_size,
-                          optimizer.param_groups[0]['lr'],
-                          losses / total_num,
-                          elapsed, epoch_elapsed, train_elapsed))
-                  begin = time.time()
+        if accelerator.is_local_main_process:
+          if batch % print_batch == 0:
+              current = time.time()
+              elapsed = current - begin
+              epoch_elapsed = (current - epoch_begin) / 60.0
+              train_elapsed = (current - train_begin) / 3600.0
 
-            batch += 1
+              print('epoch: {:4d}, batch: {:5d}/{:5d}, lr: {:.16f},\nloss: {:.8f}, elapsed: {:6.2f}s {:6.2f}m {:6.2f}h'.format(
+                      epoch, batch, total_batch_size,
+                      optimizer.param_groups[0]['lr'],
+                      losses / total_num,
+                      elapsed, epoch_elapsed, train_elapsed))
+              begin = time.time()
+
+        batch += 1
     print('train completed...')
     return losses / total_batch_size
 
@@ -129,39 +129,39 @@ def evaluate(model, criterion, dataloader, pad_id, tgt_tokenizer, device):
     print('validation start...')
     with torch.no_grad(): # require_grads=False로 변경 -> 계산에 쓰이는 메모리양 감소
         for src, tgt in dataloader:
-            if src.shape[1] < 100 and tgt.shape[1] < 100:
+           # if src.shape[1] < 100 and tgt.shape[1] < 100:
 #             src = src.to(device)
 #             tgt = tgt.to(device)
-                tgt_input = tgt[:, :-1]
-                
-                src_mask, tgt_mask = create_mask(src, tgt_input, pad_id, device)
-            
-                # (Batch, T_dec, len(vocab))
-                outputs = model(src, tgt_input, src_mask, tgt_mask) #, src_padding_mask, tgt_padding_mask, memory_mask)
-                y_hat = outputs.max(-1)[1]
-                # (Batch * T_dec)
-                tgt_out = tgt[:, 1:].reshape(-1)
-                # (Batch * T_dec, len(vocab))
-                outputs = outputs.reshape(-1, outputs.shape[-1])
+            tgt_input = tgt[:, :-1]
 
-                loss = criterion(outputs, tgt_out)
-                losses += loss.item()
-                total_num += 1 
+            src_mask, tgt_mask = create_mask(src, tgt_input, pad_id, device)
 
-                ################################################################
-                ### BLEU Score 계산 Inference ###
-                predictions, references = [], []
-                metric = BLEUScore(n_gram=4)
-                for sample, label in zip(y_hat, tgt_input):
-                    # (Tdec)
-                    # token = model.search(sample, max_length=120)
-                
-                    prediction = tgt_tokenizer.decode_ids(sample.tolist())
-                    reference = tgt_tokenizer.decode_ids(label.tolist())
-                    predictions.append(prediction)
-                    references.append(reference)
-                BLEU = metric(references, predictions)
-                epoch_BLEU.append(BLEU)
+            # (Batch, T_dec, len(vocab))
+            outputs = model(src, tgt_input, src_mask, tgt_mask) #, src_padding_mask, tgt_padding_mask, memory_mask)
+            y_hat = outputs.max(-1)[1]
+            # (Batch * T_dec)
+            tgt_out = tgt[:, 1:].reshape(-1)
+            # (Batch * T_dec, len(vocab))
+            outputs = outputs.reshape(-1, outputs.shape[-1])
+
+            loss = criterion(outputs, tgt_out)
+            losses += loss.item()
+            total_num += 1 
+
+            ################################################################
+            ### BLEU Score 계산 Inference ###
+            predictions, references = [], []
+            metric = BLEUScore(n_gram=4)
+            for sample, label in zip(y_hat, tgt_input):
+                # (Tdec)
+                # token = model.search(sample, max_length=120)
+
+                prediction = tgt_tokenizer.decode_ids(sample.tolist())
+                reference = tgt_tokenizer.decode_ids(label.tolist())
+                predictions.append(prediction)
+                references.append(reference)
+            BLEU = metric(references, predictions)
+            epoch_BLEU.append(BLEU)
     print('validation completed...')
     BLEU_score = np.mean(epoch_BLEU)
     return losses / total_num, BLEU_score
