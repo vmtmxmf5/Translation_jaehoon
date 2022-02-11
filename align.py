@@ -7,11 +7,11 @@ with open(src, 'rb') as f, open(tgt, 'rb') as g:
 
 src_clean, tgt_clean = [], []
 for s, t in zip(src_data, tgt_data):
-    if len(src_data) <= 500:
+    if len(s.decode('utf-8')) <= 500:
         src_clean.append(s)
         tgt_clean.append(t)
 
-with open('clean_'+src, 'w') as f, open('clean_'+tgt, 'w') as g:
+with open('clean_'+src, 'wb') as f, open('clean_'+tgt, 'wb') as g:
     f.writelines(src_clean)
     g.writelines(tgt_clean)
 
