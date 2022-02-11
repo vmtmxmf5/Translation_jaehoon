@@ -65,7 +65,7 @@ def train(model, optimizer, criterion, dataloader, pad_id, train_begin, epoch, d
     losses, batch = 0, 0
     print('train start...')
     for src, tgt in dataloader:
-        if src.shape[1] < 513 and tgt.shape[1] < 513:
+        if src.shape[1] < 100 and tgt.shape[1] < 100:
 #             src = src.to(device)
 #             tgt = tgt.to(device)
             tgt_input = tgt[:, :-1]
@@ -129,45 +129,39 @@ def evaluate(model, criterion, dataloader, pad_id, tgt_tokenizer, device):
     print('validation start...')
     with torch.no_grad(): # require_grads=False로 변경 -> 계산에 쓰이는 메모리양 감소
         for src, tgt in dataloader:
+            if src.shape[1] < 100 and tgt.shape[1] < 100:
 #             src = src.to(device)
 #             tgt = tgt.to(device)
-            tgt_input = tgt[:, :-1]
+                tgt_input = tgt[:, :-1]
+                
+                src_mask, tgt_mask = create_mask(src, tgt_input, pad_id, device)
             
-            src_mask, tgt_mask = create_mask(src, tgt_input, pad_id, device)
-            
-            # (Batch, T_dec, len(vocab))
-            outputs = model(src, tgt_input, src_mask, tgt_mask) #, src_padding_mask, tgt_padding_mask, memory_mask)
-            y_hat = outputs.max(-1)[1]
-            
-            # (Batch * T_dec)
-            tgt_out = tgt[:, 1:].reshape(-1)
-            # (Batch * T_dec, len(vocab))
-            outputs = outputs.reshape(-1, outputs.shape[-1])
+                # (Batch, T_dec, len(vocab))
+                outputs = model(src, tgt_input, src_mask, tgt_mask) #, src_padding_mask, tgt_padding_mask, memory_mask)
+                y_hat = outputs.max(-1)[1]
+                # (Batch * T_dec)
+                tgt_out = tgt[:, 1:].reshape(-1)
+                # (Batch * T_dec, len(vocab))
+                outputs = outputs.reshape(-1, outputs.shape[-1])
 
-            loss = criterion(outputs, tgt_out)
-            losses += loss.item()
-            total_num += 1 
+                loss = criterion(outputs, tgt_out)
+                losses += loss.item()
+                total_num += 1 
 
-            ################################################################
-            ### BLEU Score 계산 Inference ###
-
-            predictions, references = [], []
-            metric = BLEUScore(n_gram=4)
-            for sample, label in zip(y_hat, tgt[:, 1:-1]):
-                # (Tdec)
-                prediction = tgt_tokenizer.decode_ids(sample.tolist())
-                reference = tgt_tokenizer.decode_ids(label.tolist())
-                predictions.append(prediction)
-                references.append(reference)
-#             for sample, label in zip(src, tgt[:, 1:-1]):
-#                 # (Tdec)
-#                 token = model.search(sample, max_length=120)
-#                 prediction = tgt_tokenizer.decode_ids(token)
-#                 reference = tgt_tokenizer.decode_ids(label.tolist())
-#                 predictions.append(prediction)
-#                 references.append(reference)
-            BLEU = metric(references, predictions)
-            epoch_BLEU.append(BLEU)
+                ################################################################
+                ### BLEU Score 계산 Inference ###
+                predictions, references = [], []
+                metric = BLEUScore(n_gram=4)
+                for sample, label in zip(y_hat, tgt_input):
+                    # (Tdec)
+                    # token = model.search(sample, max_length=120)
+                
+                    prediction = tgt_tokenizer.decode_ids(sample.tolist())
+                    reference = tgt_tokenizer.decode_ids(label.tolist())
+                    predictions.append(prediction)
+                    references.append(reference)
+                BLEU = metric(references, predictions)
+                epoch_BLEU.append(BLEU)
     print('validation completed...')
     BLEU_score = np.mean(epoch_BLEU)
     return losses / total_num, BLEU_score
@@ -198,7 +192,7 @@ def get_logger(name: str, file_path: str, stream=False):
 def save(filename, model, optimizer, logger):
     state = {
         'model': model.state_dict(),
-        'optimizer': optimizer.state_dict()
+        # 'optimizer': optimizer.state_dict()
     }
     torch.save(state, filename)
     logger.info('Model saved')
@@ -215,7 +209,7 @@ def load(filename, model, optimizer, logger):
 
 if __name__=='__main__':
     param = DistributedDataParallelKwargs(
-            find_unused_parameters=True, check_reduction=False
+            find_unused_parameters=False, check_reduction=False
     )
     accelerator = Accelerator(fp16=True, kwargs_handlers=[param])
     device = accelerator.device
@@ -226,15 +220,15 @@ if __name__=='__main__':
     tgt_tokenizer = spm.SentencePieceProcessor()
     tgt_tokenizer.load('wmt16_tgt.model')
 
-    with open('restriced_vocab_src.json', 'r') as f:
-        vocabs = json.load(f)
+    # with open('restriced_vocab_src.json', 'r') as f:
+    #    vocabs = json.load(f)
     
-    src_tokenizer.set_vocabulary(vocabs)
+    # src_tokenizer.set_vocabulary(vocabs)
     
-    with open('restriced_vocab_tgt.json', 'r') as f:
-        vocabs = json.load(f)
+    # with open('restriced_vocab_tgt.json', 'r') as f:
+    #    vocabs = json.load(f)
     
-    tgt_tokenizer.set_vocabulary(vocabs)
+    # tgt_tokenizer.set_vocabulary(vocabs)
 
     ### config ###
     SRC_VOCAB_SIZE = src_tokenizer.get_piece_size()
@@ -245,9 +239,9 @@ if __name__=='__main__':
     BATCH_SIZE = 32 # 4
     NUM_ENCODER_LAYERS = 6
     NUM_DECODER_LAYERS = 6
-    NUM_WORKERS = 4
-    LR = 1e-5
-    EPOCHS = 37
+    NUM_WORKERS = 8
+    LR = 1e-6
+    EPOCHS = 35
     ############### 
 
     dataset = WMT_Dataset('wmt16_src_train.txt', 'wmt16_tgt_train.txt', src_tokenizer, tgt_tokenizer)
@@ -256,7 +250,7 @@ if __name__=='__main__':
     valid_dataloader = DataLoader(valid_dataset, batch_size=BATCH_SIZE, collate_fn=WMT_collate, num_workers=NUM_WORKERS)
 
     model = Seq2seqTransformer(SRC_VOCAB_SIZE, TGT_VOCAB_SIZE, NUM_ENCODER_LAYERS, NUM_DECODER_LAYERS, EMB_SIZE, NHEAD, FF_DIM)
-    optimizer = torch.optim.Adam(model.parameters(), lr=LR)
+    optimizer = torch.optim.RAdam(model.parameters(), lr=LR)
     num_training_steps = EPOCHS * len(dataloader)
     
     lr_scheduler = get_scheduler(
