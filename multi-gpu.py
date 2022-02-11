@@ -244,7 +244,7 @@ if __name__=='__main__':
     EPOCHS = 35
     ############### 
 
-    dataset = WMT_Dataset('wmt16_src_train.txt', 'wmt16_tgt_train.txt', src_tokenizer, tgt_tokenizer)
+    dataset = WMT_Dataset('clean_wmt16_src_train.txt', 'clean_wmt16_tgt_train.txt', src_tokenizer, tgt_tokenizer)
     dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, collate_fn=WMT_collate, num_workers=NUM_WORKERS)
     valid_dataset = WMT_Dataset('wmt16_src_validation.txt', 'wmt16_tgt_validation.txt', src_tokenizer, tgt_tokenizer)
     valid_dataloader = DataLoader(valid_dataset, batch_size=BATCH_SIZE, collate_fn=WMT_collate, num_workers=NUM_WORKERS)
