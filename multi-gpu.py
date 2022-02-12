@@ -189,9 +189,10 @@ def get_logger(name: str, file_path: str, stream=False):
     return logger
 
 
-def save(filename, model, logger):
+def save(filename, model, logger, accelerator):
+    save_model = accelerator.unwrap_model(model)
     state = {
-        'model': model.state_dict(),
+        'model': save_model.state_dict(),
         # 'optimizer': optimizer.state_dict()
     }
     torch.save(state, filename)
@@ -240,7 +241,7 @@ if __name__=='__main__':
     NUM_ENCODER_LAYERS = 6
     NUM_DECODER_LAYERS = 6
     NUM_WORKERS = 8
-    LR = 1e-6
+    LR = 5e-5
     EPOCHS = 35
     ############### 
 
@@ -286,7 +287,7 @@ if __name__=='__main__':
         logger.info('Epoch %d (Evaluate) Loss %0.8f BLEU %0.8f' % (epoch, valid_loss, valid_BLEU))
         
         # make_directory('checkpoint')
-        save(os.path.join('checkpoint', f"model_{epoch:03d}.pt"), model, logger)
+        save(os.path.join('checkpoint', f"model_{epoch:03d}.pt"), model, logger, accelerator)
 
         epoch_end_time = time.time()
         n_epoch += 1
