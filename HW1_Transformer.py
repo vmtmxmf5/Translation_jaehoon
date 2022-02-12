@@ -281,7 +281,12 @@ class Seq2seqTransformer(nn.Module):
                                     dropout=dropout,
                                     src_vocab_size=src_vocab_size,
                                     tgt_vocab_size=tgt_vocab_size)
-        self.generator = nn.Linear(emb_size, tgt_vocab_size)
+        self.generator = nn.Sequential(
+            nn.LayerNorm(emb_size),
+            nn.Linear(emb_size, tgt_vocab_size),
+            nn.LogSoftmax(dim=-1)
+        )
+            
         self.scale = torch.sqrt(torch.FloatTensor([emb_size]))
         self.dropout = nn.Dropout(dropout)
         # self.src_tok_emb = TokenEmbedding(src_vocab_size, emb_size)
@@ -315,7 +320,7 @@ class Seq2seqTransformer(nn.Module):
 #                                   src_key_padding_mask = src_padding_mask,
 #                                   tgt_key_padding_mask = tgt_padding_mask,
 #                                   memory_key_padding_mask = src_padding_mask)
-        return F.log_softmax(self.generator(logits), dim=-1) ## rev.
+        return self.generator(logits) ## rev.
     
     def search(self, src, src_mask, max_length=20, bos_id=2, eos_id=3):
         
@@ -353,7 +358,7 @@ class Seq2seqTransformer(nn.Module):
                                                   tgt_mask=None)
                                                 #  tgt_key_padding_mask=None,
                                                 #  memory_key_padding_mask=None)
-                output = F.log_softmax(self.generator(logits), dim=-1) ## rev.
+                output = self.generator(logits) ## rev.
                 
                 next_item = output.topk(5)[1].view(-1)[-1].item()
                 next_item = torch.tensor([[next_item]])
