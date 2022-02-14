@@ -59,7 +59,7 @@ class TransformerEncoder(nn.Module):
         batch_size = src.shape[0]
         src_len = src.shape[1]
         src_pos = torch.arange(0, src_len).unsqueeze(0).repeat(batch_size, 1).to(src.device)
-        src_emb = self.dropout((self.src_tok_emb(src) / self.scale.to(src.device)) + self.src_pos_emb(src_pos))    
+        src_emb = self.dropout(self.src_tok_emb(src) + self.src_pos_emb(src_pos))    
         
         output = src_emb
         for layer in self.layers:
@@ -114,7 +114,7 @@ class TransformerDecoder(nn.Module):
         batch_size = tgt.shape[0]
         tgt_len = tgt.shape[1]
         tgt_pos = torch.arange(0, tgt_len).unsqueeze(0).repeat(batch_size, 1).to(tgt.device)
-        tgt_emb = self.dropout((self.tgt_tok_emb(tgt) / self.scale.to(tgt.device)) + self.tgt_pos_emb(tgt_pos))
+        tgt_emb = self.dropout(self.tgt_tok_emb(tgt) + self.tgt_pos_emb(tgt_pos))
        
         output = tgt_emb
         for layer in self.layers:
