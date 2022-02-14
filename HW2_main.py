@@ -55,7 +55,7 @@ def WMT_collate(batch):
     return sources, targets
 
 
-def train(model, optimizer, criterion, dataloader, pad_id, train_begin, epoch, device):
+def train(model, optimizer, criterion, dataloader, pad_id, train_begin, epoch, device, PE): ## rev
     model.train()
     begin = epoch_begin = time.time()
     print_batch = 100
@@ -72,7 +72,7 @@ def train(model, optimizer, criterion, dataloader, pad_id, train_begin, epoch, d
             src_mask, tgt_mask = create_mask(src, tgt_input, pad_id, device)
 
             # (Batch, T_dec, len(vocab))
-            outputs = model(src, tgt_input, src_mask, tgt_mask) #, src_padding_mask, tgt_padding_mask, memory_mask)
+            outputs = model(src, tgt_input, src_mask, tgt_mask, PE) ## rev  #, src_padding_mask, tgt_padding_mask, memory_mask)
 
             # + 파이토치는 backward path 타고 오면서 누적합된 그라디언트를 사용한다 (for RNN)
             # steps 마다 zero grad로 바꿔주지 않으면 이전 step의 그라디언트를 재활용하게 되고
@@ -117,7 +117,7 @@ def train(model, optimizer, criterion, dataloader, pad_id, train_begin, epoch, d
     return losses / total_batch_size
 
 
-def evaluate(model, criterion, dataloader, pad_id, tgt_tokenizer, device):
+def evaluate(model, criterion, dataloader, pad_id, tgt_tokenizer, device, PE): ## rev
     losses = 0
     total_num, total_batch_size = 0, 0
 
@@ -134,7 +134,7 @@ def evaluate(model, criterion, dataloader, pad_id, tgt_tokenizer, device):
             src_mask, tgt_mask = create_mask(src, tgt_input, pad_id, device)
             
             # (Batch, T_dec, len(vocab))
-            outputs = model(src, tgt_input, src_mask, tgt_mask) #, src_padding_mask, tgt_padding_mask, memory_mask)
+            outputs = model(src, tgt_input, src_mask, tgt_mask, PE) ## rev , src_padding_mask, tgt_padding_mask, memory_mask)
             # (Batch * T_dec)
             tgt_out = tgt[:, 1:].reshape(-1)
             # (Batch * T_dec, len(vocab))
@@ -233,6 +233,7 @@ if __name__=='__main__':
     NUM_WORKERS = 0
     LR = 1e-5
     EPOCHS = 37
+    MAX_LEN = 500
     ############### 
 
     dataset = WMT_Dataset('clean_wmt16_src_train.txt', 'clean_wmt16_tgt_train.txt', src_tokenizer, tgt_tokenizer)
@@ -262,15 +263,22 @@ if __name__=='__main__':
     train_begin = time.time()
     n_epoch = 0
     
+    ## rev
+    PE = torch.zeros(1, MAX_LEN, EMB_SIZE)
+    for pos in range(MAX_LEN):
+        for i in range(EMB_SIZE//2):
+            PE[0, pos, 2*i] = sin(pos / 10000**(2*i/EMB_SIZE))
+            PE[0, pos, 2*i+1] = cos(pos / 10000**(2*i/EMB_SIZE))
+    
     for epoch in range(0, EPOCHS):
         epoch_start_time = time.time()
 
         # train function
-        # train_loss  = train(model, optimizer, criterion, dataloader, src_tokenizer.pad_id(), train_begin, epoch, device)
+        # train_loss  = train(model, optimizer, criterion, dataloader, src_tokenizer.pad_id(), train_begin, epoch, device, PE) ## rev
         # logger.info('Epoch %d (Training) Loss %0.8f' % (epoch, train_loss))
 
         # evaluate function
-        valid_loss, valid_BLEU = evaluate(model, criterion, valid_dataloader, src_tokenizer.pad_id(), tgt_tokenizer, device)
+        valid_loss, valid_BLEU = evaluate(model, criterion, valid_dataloader, src_tokenizer.pad_id(), tgt_tokenizer, device, PE) ## rev
         logger.info('Epoch %d (Evaluate) Loss %0.8f BLEU %0.8f' % (epoch, valid_loss, valid_BLEU))
         
         # make_directory('checkpoint')
