@@ -31,13 +31,14 @@ class Transformer(nn.Module):
                 tgt,
                 src_mask = None,
                 tgt_mask = None,
+                PE = None ## rev
 #                 memory_mask = None,
 #                 src_key_padding_mask = None,
 #                 tgt_key_padding_mask = None,
 #                 memory_key_padding_mask = None 
                 ):
-        memory = self.encoder(src, src_mask) #, src_key_padding_mask=src_key_padding_mask)
-        output = self.decoder(tgt, memory, src_mask, tgt_mask)
+        memory = self.encoder(src, src_mask, PE) #, src_key_padding_mask=src_key_padding_mask) ## rev
+        output = self.decoder(tgt, memory, src_mask, tgt_mask, PE) ## rev
 #                             tgt_mask=tgt_mask, # memory mask는 필요없고, memory key padding은 해줘야 src 이상한거 참조 안한다
 #                             memory_mask=memory_mask,
 #                             tgt_key_padding_mask=tgt_key_padding_mask,
@@ -52,14 +53,14 @@ class TransformerEncoder(nn.Module):
         self.norm = norm
         self.scale = torch.sqrt(torch.FloatTensor([d_model]))
         self.src_tok_emb = nn.Embedding(src_vocab_size, d_model) # hid dim == emb dim
-        self.src_pos_emb = nn.Embedding(512, d_model) # 우리 모델은 최대 max_length 만큼의 토큰 개수 만큼을 '한 문장'으로 받아들일 수 있다
+   ## rev     # self.src_pos_emb = nn.Embedding(512, d_model) # 우리 모델은 최대 max_length 만큼의 토큰 개수 만큼을 '한 문장'으로 받아들일 수 있다
         self.dropout = nn.Dropout(0.1)
     
-    def forward(self, src, src_mask=None): #, src_key_padding_mask=None):
-        batch_size = src.shape[0]
-        src_len = src.shape[1]
-        src_pos = torch.arange(0, src_len).unsqueeze(0).repeat(batch_size, 1).to(src.device)
-        src_emb = self.dropout((self.src_tok_emb(src) * self.scale.to(src.device)) + self.src_pos_emb(src_pos))     
+    def forward(self, src, src_mask=None, PE=None): #, src_key_padding_mask=None):
+##   rev      batch_size = src.shape[0]
+#         src_len = src.shape[1]
+#         src_pos = torch.arange(0, src_len).unsqueeze(0).repeat(batch_size, 1).to(src.device)
+        src_emb = self.dropout((self.src_tok_emb(src) / self.scale.to(src.device)) + PE)     
         
         output = src_emb
         for layer in self.layers:
