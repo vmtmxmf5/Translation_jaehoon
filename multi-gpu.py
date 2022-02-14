@@ -195,7 +195,7 @@ def save(filename, model, logger, accelerator):
         'model': save_model.state_dict(),
         # 'optimizer': optimizer.state_dict()
     }
-    torch.save(state, filename)
+    accelerator.save(state, filename)
     logger.info('Model saved')
 
 
